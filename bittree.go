@@ -4,6 +4,7 @@ import (
     "os"
     "log"
     "bufio"
+    "compress/gzip"
 
     "kingsford/bitio"
 )
@@ -16,7 +17,6 @@ Write out the kmer code using a pre-order traversal:
 */
 
 const ALPHA string = "ACGT" 
-
 
 func children(kmers []string, start, end, depth int) [len(ALPHA)][2]int {
     var p [len(ALPHA)][2]int
@@ -34,7 +34,7 @@ func children(kmers []string, start, end, depth int) [len(ALPHA)][2]int {
     return p
 }
 
-func traverse(kmers []string, bits chan<- byte) {
+func traverseToBitTree(kmers []string, bits chan<- byte) {
 
     count := 0
 
@@ -77,7 +77,7 @@ func traverse(kmers []string, bits chan<- byte) {
     close(bits)
 }
 
-func decode(bits <-chan byte, k int, out chan<-string) {
+func decodeBitTree(bits <-chan byte, k int, out chan<-string) {
     // stack starts with the root string
     stack := make([]string, 0)
     stack = append(stack, "")
@@ -107,7 +107,7 @@ func decode(bits <-chan byte, k int, out chan<-string) {
 func encodeKmersToFile(kmers []string, out *bitio.Writer) {
     log.Printf("Encoding %v kmers to bittree file...", len(kmers))
     bits := make(chan byte)
-    go traverse(kmers, bits)
+    go traverseToBitTree(kmers, bits)
 
     count := 0
     for c := range bits {
@@ -123,7 +123,7 @@ func readBits(in *bitio.Reader, bits chan<- byte) {
         b, err := in.ReadBit()
         count++
         if err != nil {
-            log.Printf("Stopping after %v bits\n", count)
+            log.Printf("Stopping after %v bits", count)
             close(bits)
             return
         }
@@ -131,16 +131,19 @@ func readBits(in *bitio.Reader, bits chan<- byte) {
     }
 }
 
+
 func decodeKmersFromFile(filename string, k int) []string {
     log.Printf("Decoding kmer buckets from %v", filename)
     // open the file and wrap a bit reader around it
     bittree, err := os.Open(filename)
-    if err != nil {
-        log.Fatalf("Couldn't open bitree file %v", err)
-    }
+    DIE_ON_ERR(err, "Couldn't open bitree file %s", filename)
     defer bittree.Close()
 
-    in := bitio.NewReader(bufio.NewReader(bittree))
+    bittreeZ, err := gzip.NewReader(bittree)
+    DIE_ON_ERR(err, "Couldn't create gzipper")
+    defer bittreeZ.Close()
+
+    in := bitio.NewReader(bufio.NewReader(bittreeZ))
     defer in.Close()
 
     // start a routine to produce the bits
@@ -151,7 +154,7 @@ func decodeKmersFromFile(filename string, k int) []string {
     out := make(chan string)
 
     // decode and pass the input to the decoded output
-    go decode(bits, k, out)
+    go decodeBitTree(bits, k, out)
 
     kmers := make([]string, 0)
     for s := range out {
@@ -160,5 +163,4 @@ func decodeKmersFromFile(filename string, k int) []string {
     log.Printf("done; found %v kmers", len(kmers))
     return kmers
 }
-
 
