@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"log"
 	"os"
+    "fmt"
 
 	"kingsford/bitio"
 )
@@ -72,7 +73,7 @@ func traverseToBitTree(kmers []string, bits chan<- byte) {
 	}
 	log.Printf("Wrote %v kmers\n", count)
 	if count != len(kmers) {
-		panic("Should have written a different number of kmers!")
+		panic(fmt.Errorf("Should have written %d kmers, but wrote %d!", len(kmers), count))
 	}
 	close(bits)
 }

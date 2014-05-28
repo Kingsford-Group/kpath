@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"path/filepath"
 
 	"kingsford/arithc"
 )
@@ -77,3 +78,9 @@ func transitionHasNonZeroProb(hash KmerHash, context string, next byte) bool {
 	h, ok := hash[stringToKmer(context)]
 	return ok && h.next[acgt(next)] > 0
 }
+
+func removeExtension(filename string) string {
+	extension := filepath.Ext(filename)
+	return strings.TrimRight(filename, extension)
+}
+

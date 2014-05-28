@@ -10,6 +10,8 @@ x3. move unused code over to unused.no file
 x4. update error messages and panic messages to be more consistent
     // DIE_ON_ERROR(err, "Couldn't create bucket file: %v", err)
 
+4.1 write out all the global options when encoding / decoding
+
 5. conserve memory with a DNAString type (?)
 6. profile to speed up
 7. parallelize
@@ -24,7 +26,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -39,7 +40,7 @@ import (
 type Kmer uint64
 
 type KmerInfo struct {
-	next [4]uint32
+	next [len(ALPHA)]uint32
 }
 
 type KmerHash map[Kmer]*KmerInfo
@@ -54,8 +55,8 @@ var (
 	refFile           string
 	readFile          string
 	globalK           int
-	defaultInterval   [4]uint32 = [...]uint32{2, 2, 2, 2}
-	readStartInterval [4]uint32 = [...]uint32{2, 2, 2, 2}
+	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
+	readStartInterval [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
 
 	defaultUsed   int
 	contextExists int
@@ -65,7 +66,7 @@ var (
 
 // global variables for smoothing
 var (
-	lastSmooth   [4]uint64 = [...]uint64{1, 2, 3, 4}
+	lastSmooth   [len(ALPHA)]uint64 = [...]uint64{1, 2, 3, 4}
 	charCount    uint64
 	smoothFile   *os.File
 	tmpByteSlice []byte = make([]byte, 2)
@@ -98,7 +99,7 @@ func acgt(a byte) byte {
 	case 'T':
 		return 3
 	}
-	panic("Bad character!")
+    panic(fmt.Errorf("Bad character: %s!", string(a)))
 }
 
 func baseFromBits(a byte) byte {
@@ -231,7 +232,7 @@ func min64(a uint64, b uint64) uint64 {
 	return b
 }
 
-func maxChar(dist [4]uint32) byte {
+func maxChar(dist [len(ALPHA)]uint32) byte {
 	curMax := uint32(0)
 	curR := 0
 	for i, m := range dist {
@@ -278,7 +279,7 @@ x w = observationWeight * min64(uint64(dist[i]-1), 1)
 x Smooth anytime count < 2
 */
 
-func contextWeight(charIdx int, dist [4]uint32) (w uint64) {
+func contextWeight(charIdx int, dist [len(ALPHA)]uint32) (w uint64) {
 	if dist[charIdx] >= seenThreshold {
 		w = observationWeight * uint64(dist[charIdx]) / uint64(observationInc)
 		return
@@ -287,14 +288,14 @@ func contextWeight(charIdx int, dist [4]uint32) (w uint64) {
 	return
 }
 
-func defaultWeight(charIdx int, dist [4]uint32) uint64 {
+func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
 	return uint64(dist[charIdx])
 }
 
-type WeightXformFcn func(int, [4]uint32) uint64
+type WeightXformFcn func(int, [len(ALPHA)]uint32) uint64
 
 /* return the partial sum for the given character */
-func intervalFor(nextChar byte, dist [4]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
+func intervalFor(nextChar byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
 	letterIdx := int(acgt(nextChar))
 	for i := 0; i < len(dist); i++ {
 		w := weightOf(i, dist)
@@ -512,7 +513,7 @@ func readBucketCounts(countsFN string) []int {
 	return counts
 }
 
-func dart(dist [4]uint32, target uint32, weightOf WeightXformFcn) (uint64, uint64, uint64) {
+func dart(dist [len(ALPHA)]uint32, target uint32, weightOf WeightXformFcn) (uint64, uint64, uint64) {
 	sum := uint32(0)
 	for i := range dist {
 		w := uint32(weightOf(i, dist))
@@ -623,14 +624,13 @@ func init() {
 	encodeFlags.IntVar(&globalK, "k", 16, "length of k")
 }
 
-const (
-	ENCODE int = 1
-	DECODE int = 2
-)
-
-func removeExtension(filename string) string {
-	extension := filepath.Ext(filename)
-	return strings.TrimRight(filename, extension)
+func writeGlobalOptions() {
+    log.Printf("psudeoCount = %d", pseudoCount)
+    log.Printf("observationWeight = %d", observationWeight)
+    log.Printf("seenThreshold = %d", seenThreshold)
+    log.Printf("observationInc = %d", observationInc)
+    log.Printf("smoothOption = %v", smoothOption)
+    log.Printf("flipReadsOption = %v", flipReadsOption)
 }
 
 func main() {
@@ -638,6 +638,10 @@ func main() {
 	log.Println("Starting kpath version 5-27-14")
 
 	// parse the command line
+    const (
+        ENCODE int = 1
+        DECODE int = 2
+    )
 	if len(os.Args) < 2 {
 		encodeFlags.PrintDefaults()
 		os.Exit(1)
@@ -652,6 +656,7 @@ func main() {
 	if globalK <= 0 {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
+    log.Printf("Using kmer size = %d", globalK)
 
 	// count the kmers in the reference
 	hash := countKmers(globalK, refFile)
@@ -659,6 +664,7 @@ func main() {
 		len(hash), globalK)
 	capTransitionCounts(hash, 2)
 
+    writeGlobalOptions()
 	if mode == ENCODE {
 		/* encode -k -ref -reads=FOO.seq -out=OUT
 		   will encode into OUT.{enc,bittree,counts} */
