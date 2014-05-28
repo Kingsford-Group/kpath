@@ -17,8 +17,10 @@ Write out the kmer code using a pre-order traversal:
     0 means next character is not present
 */
 
+// ALPHA is the alphabet we are working over. Some code assumes it is ACGT.
 const ALPHA string = "ACGT"
 
+// children() computes the children of the given kmer "node" in the kmer list.
 func children(kmers []string, start, end, depth int) [len(ALPHA)][2]int {
 	var p [len(ALPHA)][2]int
 
@@ -35,6 +37,9 @@ func children(kmers []string, start, end, depth int) [len(ALPHA)][2]int {
 	return p
 }
 
+// traverseToBitTree() takes a sorted list of kmers and treats it as a trie
+// that it traverses in DFS-order, outputting to the bits channel a 1 whenever
+// an edge exists and 0 when it does not.
 func traverseToBitTree(kmers []string, bits chan<- byte) {
 
 	count := 0
@@ -78,6 +83,9 @@ func traverseToBitTree(kmers []string, bits chan<- byte) {
 	close(bits)
 }
 
+// decodeBitTree() reads bits from the given channel and outputs kmers on the
+// output channel that were stored in the bittree. The output kmers are in no
+// particular order.
 func decodeBitTree(bits <-chan byte, k int, out chan<- string) {
 	// stack starts with the root string
 	stack := make([]string, 0)
@@ -104,6 +112,8 @@ func decodeBitTree(bits <-chan byte, k int, out chan<- string) {
 	close(out)
 }
 
+// given a list of kmers, encode them to a file using the bittree scheme. The
+// kmers must be sorted and they must be unique.
 func encodeKmersToFile(kmers []string, out *bitio.Writer) {
 	log.Printf("Encoding %v kmers to bittree file...", len(kmers))
 	bits := make(chan byte)
@@ -117,6 +127,7 @@ func encodeKmersToFile(kmers []string, out *bitio.Writer) {
 	log.Printf("done. Wrote %v bits", count)
 }
 
+// readBits() creates a bit channel from a bitio.Reader().
 func readBits(in *bitio.Reader, bits chan<- byte) {
 	count := 0
 	for {
@@ -131,6 +142,8 @@ func readBits(in *bitio.Reader, bits chan<- byte) {
 	}
 }
 
+// decodeKmersFromFile() opens the given gzipped bittree file and extracts the
+// stored kmers.
 func decodeKmersFromFile(filename string, k int) []string {
 	log.Printf("Decoding kmer buckets from %v", filename)
 	// open the file and wrap a bit reader around it
