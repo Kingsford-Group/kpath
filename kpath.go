@@ -1,11 +1,32 @@
 package main
 
+/* TODO:
+x0. change pseudocount to be max (or else change the seen threshold)
+x1. fix filename handling (including outputting filename information as a log)
+x why isn't TTTT...TTT flipped? b/c it's tied
+
+2. compress counts and bittree directly from here (and uncompress bittree when reading it)
+3. move unused code over to unused.no file
+4. update error messages and panic messages to be more consistent
+    // DIE_ON_ERROR(err, "Couldn't create bucket file: %v", err)
+
+5. conserve memory with a DNAString type (?)
+6. profile to speed up
+7. parallelize
+8. add some more unit tests
+*/
+
 import (
     "log"
     "os"
+    "io"
+    "fmt"
     "bufio"
     "strings"
     "flag"
+    "sort"
+    "compress/gzip"
+    "path/filepath"
 
     "kingsford/arithc"
     "kingsford/bitio"
@@ -51,12 +72,13 @@ var (
 )
 
 const (
-    pseudoCount         uint64 = 0
+    pseudoCount         uint64 = 1
     observationWeight   uint64 = 10
     seenThreshold       uint32 = 2 // before this threshold, increment 1 and treat as unseen
     observationInc      uint32 = 2 // once above seenThreshold, increment by this on each observation
 
     smoothOption        bool = false
+    flipReadsOption     bool = true
 )
 
 //===================================================================
@@ -66,10 +88,13 @@ const (
 func acgt(a byte) byte {
     switch a {
         case 'A': return 0
+        case 'N': return 0
         case 'C': return 1
         case 'G': return 2
         case 'T': return 3
     }
+    panic("Bad character!")
+
     return 0  // invalid chars -> 'A'
 }
 
@@ -85,14 +110,16 @@ func stringToKmer(kmer string) Kmer {
     return Kmer(x)
 }
 
+
 func kmerToString(kmer Kmer, k int) string {
     s := make([]byte, k)
     for i := 0; i < k; i++ {
-        s[k - i - 1] = byte(kmer & 0x3)
+        s[k - i - 1] = baseFromBits(byte(kmer & 0x3))
         kmer >>= 2
     }
     return string(s)
 }
+
 
 /* RC computes the reverse complement of the single nucleotide */
 func RC(c byte) byte {
@@ -123,10 +150,17 @@ func newKmerHash() KmerHash {
 
 /* Read a multifasta file into a slice of strings */
 func readFastaFile(fastaFile string) []string {
+    // open the .gz fasta file that is the references
     log.Println("Reading Reference File...")
-    in, err := os.Open(fastaFile)
+    inFasta, err := os.Open(fastaFile)
     if err != nil {
         log.Fatalf("Couldn't open fasta file %s: %v", fastaFile, err)
+    }
+    defer inFasta.Close()
+
+    in, err := gzip.NewReader(inFasta)
+    if err != nil {
+        log.Fatalf("Couldn't open gz file: %v", err)
     }
     defer in.Close()
 
@@ -256,7 +290,8 @@ x Smooth anytime count < 2
 
 func contextWeight(charIdx int, dist[4]uint32) (w uint64) {
     if dist[charIdx] >= seenThreshold {
-        w = observationWeight * uint64(dist[charIdx]) / uint64(observationInc) + pseudoCount
+        w = observationWeight * uint64(dist[charIdx]) / uint64(observationInc)
+        //if w < pseudoCount { w = pseudoCount }
         return
     }
     w = pseudoCount
@@ -318,9 +353,24 @@ func nextInterval(hash KmerHash, context string, next byte) (a uint64, b uint64,
         hash[contextMer] = &KmerInfo{}
         hash[contextMer].next[kidx]++
     }
+    //fmt.Printf("CT: %v ", total)
+    //fmt.Printf("NI: %s=%s next=%s added=%v inhash=%v defused=%v\n", 
+        //context, kmerToString(contextMer, len(context)),  string(next), added, inhash, useddef)
     return
 }
 
+/* count the number of observaions of kmers in the read */
+func countMatchingObservations(hash KmerHash, r string) (n uint32) {
+    context := r[ : globalK]
+    for i := globalK; i <= len(r) - globalK; i++ {
+        if H, ok := hash[stringToKmer(context)]; ok {
+            n += H.next[acgt(r[i])]
+        }
+        context = context[1:] + string(r[i])
+    }
+
+    return
+}
 
 /* count the number of kmers present in the context */
 func countMatchingContexts(hash KmerHash, r string) (n int) {
@@ -336,16 +386,16 @@ func countMatchingContexts(hash KmerHash, r string) (n int) {
 /* encode a single read: uses 1 scheme for initial part, and 1 scheme for the rest */
 func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
     // guess whether we should reverse complement the read
-    n1 := countMatchingContexts(hash, r)
+    n1 := countMatchingObservations(hash, r)
     rcr := reverseComplement(r)
-    n2 := countMatchingContexts(hash, rcr)
+    n2 := countMatchingObservations(hash, rcr)
     if n2 > n1 {
         r = rcr
         flipped++
     }
 
     var i int
-    // for early characters in the read, use the default interval
+    // for early characters in the read, use the readStart interval
     for i = 0; i < globalK; i++ {
         a, b, total := intervalFor(r[i], readStartInterval, defaultWeight)
         readStartInterval[acgt(r[i])]++
@@ -367,7 +417,6 @@ func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
     }
     return nil
 }
-
 
 /* Read each line as a read and encode it using encodeSingleRead */
 func encodeReads(readFile string, hash KmerHash, coder *arithc.Encoder) (n int) {
@@ -393,61 +442,405 @@ func encodeReads(readFile string, hash KmerHash, coder *arithc.Encoder) (n int) 
     return n
 }
 
+func isACGT(c rune) bool {
+    return c == 'A' || c == 'C' || c == 'G' || c == 'T'
+}
+
+func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []string {
+    // open the read file
+    log.Println("Reading and flipping reads...")
+    in, err := os.Open(readFile)
+    if err != nil {
+        log.Fatalf("Couldn't open read file %v", err)
+    }
+    defer in.Close()
+
+    // put the reads into a global array, flipped if needed
+    reads := make([]string, 0)
+    scanner := bufio.NewScanner(in)
+    for scanner.Scan() {
+        // remove spaces and convert on-ACGT to 'A'
+        r := strings.Replace(strings.TrimSpace(strings.ToUpper(scanner.Text())), "N", "A", -1)
+        if flipReadsOption {
+            n1 := countMatchingContexts(hash, r)
+            rcr := reverseComplement(r)
+            n2 := countMatchingContexts(hash, rcr)
+            // if they are tied, take the lexigographically smaller one
+            if n2 > n1 || (n2 == n1 && rcr < r) {
+                r = rcr
+                flipped++
+            }
+        }
+        reads = append(reads, r)
+    }
+    if err := scanner.Err(); err != nil {
+        log.Fatalf("Couldn't read reads file: %v", err)
+    }
+
+    // sort the strings and return
+    sort.Strings(reads)
+    log.Printf("Read %v reads; flipped %v of them.\n", len(reads), flipped)
+    return reads
+}
+
+/* encode a single read: uses 1 scheme for initial part, and 1 scheme for the rest */
+func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) error {
+    // encode rest using the reference probs
+    context := r[ : globalK]
+    //fmt.Printf("FS: %s\n", context)
+    for i := globalK; i < len(r); i++ {
+        char := r[i]
+        a, b, total := nextInterval(hash, context, char)
+        err := coder.Encode(a, b, total)
+        if err != nil { return err }
+        context = context[1:] + string(char)
+    }
+    return nil
+}
+
+// return the buckets and their counts
+func listBuckets(reads []string) ([]string, []int){
+    curBucket := ""
+    buckets := make([]string, 0)
+    counts := make([]int, 0)
+
+    for _, r := range reads {
+        if r[:globalK] != curBucket {
+            curBucket = r[:globalK]
+            buckets = append(buckets, curBucket)
+            counts = append(counts, 1)
+        } else {
+            counts[len(counts)-1]++
+        }
+    }
+    return buckets, counts
+}
+
+func writeCounts(f io.Writer, counts []int) {
+    log.Printf("Writing counts...")
+    for _, c := range counts {
+        fmt.Fprintf(f, "%d ", c)
+    }
+    log.Printf("Done.")
+}
+
+func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arithc.Encoder) int {
+
+    // read the reads and flip as needed
+    reads := readAndFlipReads(readFile, hash, flipReadsOption)
+
+    // create the buckets and counts
+    buckets, counts := listBuckets(reads)
+
+    // write the bittree for the bucket out to a file
+    outBT, err := os.Create(outBaseName + ".bittree")
+    if err != nil {
+        log.Fatalf("Couldn't create bucket file: %v", err)
+    }
+    defer outBT.Close()
+    outBZ, err := gzip.NewWriterLevel(outBT, gzip.BestCompression)
+    if err != nil {
+        log.Fatalf("Couldn't create gzipper for bucket file: %v", err)
+    }
+    defer outBZ.Close()
+
+    writer := bitio.NewWriter(outBZ)
+    defer writer.Close()
+
+    encodeKmersToFile(buckets, writer)
+
+    // write out the counts
+    countF, err := os.Create(outBaseName + ".counts")
+    if err != nil {
+        log.Fatalf("Couldn't create counts file: %v", err)
+    }
+    defer countF.Close()
+    countZ, err := gzip.NewWriterLevel(countF, gzip.BestCompression)
+    if err != nil {
+        log.Fatalf("Couldn't create gzipper: %v", err)
+    }
+    defer countZ.Close()
+
+    writeCounts(countZ, counts)
+
+    // encode every read
+    log.Printf("Encoding reads...")
+    for _, r := range reads {
+        err := encodeSingleReadWithBucket(r, hash, coder)
+        if err != nil {
+            log.Fatalf("Error encoding read %v", r)
+        }
+    }
+    log.Printf("done.")
+    return len(reads)
+}
+
+
+//===============================================================================
+// DECODING
+//===============================================================================
+
+func readBucketCounts(countsFN string) []int {
+    log.Printf("Reading bucket counts from %v", countsFN)
+    c1, err := os.Open(countsFN)
+    if err != nil {
+        log.Fatalf("Couldn't open count file %v", err)
+    }
+    defer c1.Close()
+    c, err := gzip.NewReader(c1)
+    DIE_ON_ERR(err, "Couldn't create gzip reader: %v")
+    defer c.Close()
+
+    counts := make([]int, 0)
+    var n int
+    err = nil
+    for x := 1; err == nil && x > 0; {
+        x, err = fmt.Fscanf(c, "%d", &n)
+        if x > 0 && err == nil {
+            counts = append(counts, n)
+        }
+    }
+    log.Println("done.")
+    return counts
+}
+
+func dart(dist [4]uint32, target uint32, weightOf WeightXformFcn) (uint64, uint64, uint64) {
+    sum := uint32(0)
+    for i := range dist {
+        w := uint32(weightOf(i, dist))
+        sum += w
+        if target < sum {
+            return uint64(sum - w), uint64(sum), uint64(i)
+        }
+    }
+    panic(fmt.Errorf("Couldn't find range for target %d", target))
+}
+
+// look up an interval that contains this total
+func lookup(hash KmerHash, context string, t uint64) (c uint64, d uint64, s uint64) {
+    ctx := stringToKmer(context)
+    info, ok := hash[ctx]
+    if ok {
+        c, d, s = dart(info.next, uint32(t), contextWeight)
+    }
+    if !ok || c == d {
+        return dart(defaultInterval, uint32(t), defaultWeight)
+    }
+    return
+}
+
+func sumDist(d [4]uint32, weightOf WeightXformFcn) (total uint64) {
+    for i := range d {
+        total += uint64(weightOf(i, d))
+    }
+    return
+}
+
+func contextTotal(hash KmerHash, context string) uint64 {
+    info, ok := hash[stringToKmer(context)]
+    if ok {
+        return sumDist(info.next, contextWeight)
+    } else {
+        return sumDist(defaultInterval, defaultWeight)
+    }
+}
+
+func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out io.Writer, decoder *arithc.Decoder) {
+    log.Printf("#kmers = %v", len(kmers)) 
+    log.Printf("#counts = %v",len(counts))
+    log.Printf("Decoding reads...")
+
+    buf := bufio.NewWriter(out)
+
+    var context string
+    lu := func(t uint64) (uint64, uint64, uint64) {
+        return lookup(hash, context, t)
+    }
+
+    n := 0
+    curBucket := 0
+    bucketCount := 0
+    for curBucket < len(kmers) {
+        // write the bucket
+        buf.Write([]byte(kmers[curBucket]))
+
+        // write the reads
+        context = kmers[curBucket]
+        //fmt.Printf("FS: %s\n", context)
+        for i := 0; i < readLen - len(kmers[0]); i++ {
+            // decode next symbol
+            symb, err := decoder.Decode(contextTotal(hash, context), lu)
+            if err != nil {
+                log.Fatalf("Error decoding! %v", err)
+            }
+
+            // write it out
+            next := baseFromBits(byte(symb))
+            buf.WriteByte(next)
+
+            // update hash counts (throws away the computed interval; just
+            // called for side effects.)
+            nextInterval(hash, context, next) 
+            
+            // update the new context
+            context = context[1:] + string(next)
+        }
+
+        // at the end of the read; write a newline and increment the # of reads
+        // from this bucket that we've written
+        buf.WriteByte('\n')
+        bucketCount++
+        n++
+
+        if bucketCount == counts[curBucket] {
+            curBucket++
+            bucketCount = 0
+        }
+    }
+    buf.Flush()
+    log.Printf("done. Wrote %v reads.", n)
+}
+
 
 //===================================================================
 // Command line and main driver
 //===================================================================
 
+func DIE_ON_ERR(err error, msg string, args... interface{}) {
+    if err != nil {
+        log.Printf(msg, args...)
+        log.Fatalln(err)
+    }
+}
+
 func init() {
     encodeFlags = flag.NewFlagSet("encode", flag.ContinueOnError)
-    encodeFlags.StringVar(&outFile, "out", "", "output filename")
     encodeFlags.StringVar(&refFile, "ref", "", "reference fasta filename")
+    encodeFlags.StringVar(&outFile, "out", "", "output filename")
     encodeFlags.StringVar(&readFile, "reads", "", "reads filename")
-    encodeFlags.IntVar(&globalK, "k", 0, "length of k")
+    encodeFlags.IntVar(&globalK, "k", 16, "length of k")
+}
+
+const (
+    ENCODE int = 1
+    DECODE int = 2
+)
+
+func removeExtension(filename string) string {
+    extension := filepath.Ext(filename)
+    return strings.TrimRight(filename, extension)
 }
 
 func main() {
-    log.Println("Starting kpath version 4-20-14")
+    log.Println("Starting kpath version 5-27-14")
 
     if len(os.Args) < 2 {
         encodeFlags.PrintDefaults()
         os.Exit(1)
     }
-    encodeFlags.Parse(os.Args[1:])
+    var mode int
+    if os.Args[1][0] == 'e' {
+        mode = ENCODE
+    } else {
+        mode = DECODE
+    }
+    encodeFlags.Parse(os.Args[2:])
+    if globalK <= 0 {
+        log.Fatalf("K must be specified as a small positive integer with -k")
+    }
 
     // count the kmers in the reference
     hash := countKmers(globalK, refFile)
-    log.Printf("There are %v unique %v-mers in the refernece\n", 
+    log.Printf("There are %v unique %v-mers in the reference\n", 
         len(hash), globalK)
     capTransitionCounts(hash, 2)
 
-    // create the output file
-    outF, err := os.Create(outFile)
-    if err != nil {
-        log.Fatalf("Couldn't create output file %s: %v", outFile, err)
-    }
-    defer outF.Close()
-    writer := bitio.NewWriter(outF)
-    defer writer.Close()
 
-    if smoothOption {
-        smoothFile, err = os.Create("smoothed.txt")
-        if err != nil {
-            log.Fatalf("Couldn't create smoothed file: %v", err)
+    if mode == ENCODE {
+        /* encode -k -ref -reads=FOO.seq -out=OUT
+            will encode into OUT.{enc,bittree,counts} */
+        log.Printf("Reading from %s", readFile)
+        log.Printf("Writing to %s, %s, %s", outFile + ".enc", outFile + ".bittree", outFile + ".counts")
+
+        var err error
+
+        if smoothOption {
+            smoothFile, err = os.Create("smoothed.txt")
+            if err != nil {
+                log.Fatalf("Couldn't create smoothed file: %v", err)
+            }
+            defer smoothFile.Close()
         }
-        defer smoothFile.Close()
+
+        // create the output file
+        outF, err := os.Create(outFile + ".enc")
+        if err != nil {
+            log.Fatalf("Couldn't create output file %s: %v", outFile, err)
+        }
+        defer outF.Close()
+
+        writer := bitio.NewWriter(outF)
+        defer writer.Close()
+
+        // create encoder
+        encoder := arithc.NewEncoder(writer)
+        defer encoder.Finish()
+
+        // encode reads
+        //n := encodeReads(readFile, hash, encoder)
+        n := encodeWithBuckets(readFile, outFile, hash, encoder)
+        log.Printf("Encoded %v reads.", n)
+        log.Printf("Smoothed (changed) %v characters", smoothed)
+        log.Printf("Reads Flipped: %v", flipped)
+
+    } else {
+        /* decode -k -ref -reads=FOO -out=OUT.seq
+            will look for FOO.enc, FOO.bittree, FOO.counts and decode into OUT.seq */
+
+        tailsFN := readFile + ".enc"
+        headsFN := readFile + ".bittree"
+        countsFN := readFile + ".counts"
+
+        log.Printf("Reading from %s, %s, and %s", tailsFN, headsFN, countsFN)
+        log.Printf("Writing to %s", outFile)
+
+        // read the bucket names
+        kmers := decodeKmersFromFile(headsFN, globalK)
+        sort.Strings(kmers)
+
+        // read the bucket counts
+        counts := readBucketCounts(countsFN)
+
+        // open encoded read file
+        encIn, err := os.Open(tailsFN)
+        if err != nil {
+            log.Fatalf("Can't open encoded read file: %v", err)
+        }
+        defer encIn.Close()
+
+        // create a bit reader wrapper around it
+        reader := bitio.NewReader(bufio.NewReader(encIn))
+        defer reader.Close()
+
+        // create a decoder around it
+        decoder, err := arithc.NewDecoder(reader)
+        if err != nil {
+            log.Fatalf("Couldn't create decoder!")
+        }
+
+
+        // create the output file
+        outF, err := os.Create(outFile)
+        if err != nil {
+            log.Fatalf("Couldn't create output file %s: %v", outFile, err)
+        }
+        defer outF.Close()
+
+        READLEN := 35
+        decodeReads(kmers, counts, hash, READLEN, outF, decoder)
     }
-
-    // create encoder
-    encoder := arithc.NewEncoder(writer)
-    defer encoder.Finish()
-
-    // encode reads
-    n := encodeReads(readFile, hash, encoder)
-    log.Printf("Encoded %v reads; default interval used %v times (context used %v times)\n", 
-        n, defaultUsed, contextExists)
-    log.Printf("Smoothed (changed) %v characters\n", smoothed)
-    log.Printf("Reads Flipped: %v\n", flipped)
+    log.Printf("Default interval used %v times and context used %v times", 
+        defaultUsed, contextExists)
 }
 
 
