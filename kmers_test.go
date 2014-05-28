@@ -14,3 +14,15 @@ func TestKmerConversion(t *testing.T) {
 		}
 	}
 }
+
+func TestKmerShift(t *testing.T) {
+    globalK = 5
+    m1 := kmerToString(shiftKmer(stringToKmer("TTCGT"), acgt(byte('G'))), globalK)
+    if m1 != "TCGTG" {
+        t.Fatalf("%s != %s", m1, "TCGTG")
+    }
+    m2 := kmerToString(shiftKmer(stringToKmer("TTCGT"), acgt(byte('C'))), globalK)
+    if m2 != "TCGTC" {
+        t.Fatalf("%s != %s", m1, "TCGTC")
+    }
+}

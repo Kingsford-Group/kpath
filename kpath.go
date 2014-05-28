@@ -144,14 +144,15 @@ func kmerToString(kmer Kmer, k int) string {
 
 // setShiftKmerMask() initializes the kmer mask. This must be called anytime
 // globalK changes.
-func setShiftKmerMask() {
-    shiftKmerMask = Kmer(3 << 2*globalK)
-}
+//func setShiftKmerMask() {
+//    shiftKmerMask = Kmer(3 << 2*globalK)
+//}
 
 // shiftKmer() creates a new kmer by shifting the given one over one base to the left
 // and adding the given next character at the right.
 func shiftKmer(kmer Kmer, next byte) Kmer {
-    return ((kmer<<2) &^ shiftKmerMask) | Kmer(next)
+    return kmer<<2 | Kmer(next)
+    //return ((kmer<<2) &^ shiftKmerMask) | Kmer(next)
 }
 
 // RC computes the reverse complement of a single given nucleotide. Ns become
@@ -690,7 +691,6 @@ func main() {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
     log.Printf("Using kmer size = %d", globalK)
-    setShiftKmerMask()
 
     if cpuProfile != "" {
         log.Printf("Writing CPU profile to %s", cpuProfile)
