@@ -144,15 +144,17 @@ func kmerToString(kmer Kmer, k int) string {
 
 // setShiftKmerMask() initializes the kmer mask. This must be called anytime
 // globalK changes.
-//func setShiftKmerMask() {
-//    shiftKmerMask = Kmer(3 << 2*globalK)
-//}
+func setShiftKmerMask() {
+    for i := 0; i < globalK; i++ {
+        shiftKmerMask = (shiftKmerMask << 2) | 3
+    }
+}
 
 // shiftKmer() creates a new kmer by shifting the given one over one base to the left
 // and adding the given next character at the right.
 func shiftKmer(kmer Kmer, next byte) Kmer {
-    return kmer<<2 | Kmer(next)
-    //return ((kmer<<2) &^ shiftKmerMask) | Kmer(next)
+    //return kmer<<2 | Kmer(next)
+    return ((kmer<<2) | Kmer(next)) & shiftKmerMask
 }
 
 // RC computes the reverse complement of a single given nucleotide. Ns become
@@ -186,7 +188,7 @@ func reverseComplement(r string) string {
 
 // newKmerHash() constructs a new, empty kmer hash.
 func newKmerHash() KmerHash {
-	return make(KmerHash)
+	return make(KmerHash, 100000000)
 }
 
 // readReferenceFile() reads the sequences in the gzipped multifasta file with
@@ -203,8 +205,8 @@ func readReferenceFile(fastaFile string) []string {
 	DIE_ON_ERR(err, "Couldn't open gzipped file %s", fastaFile)
 	defer in.Close()
 
-	out := make([]string, 0)
-	cur := make([]string, 0)
+	out := make([]string, 0, 10000000)
+	cur := make([]string, 0, 100)
 
 	scanner := bufio.NewScanner(in)
 	for scanner.Scan() {
@@ -212,7 +214,7 @@ func readReferenceFile(fastaFile string) []string {
 		if len(line) > 0 && line[0] == '>' {
 			if len(cur) > 0 {
 				out = append(out, strings.Join(cur, ""))
-				cur = make([]string, 0)
+				cur = make([]string, 0, 100)
 			}
 		} else if len(line) > 0 {
 			cur = append(cur, line)
@@ -691,6 +693,7 @@ func main() {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
     log.Printf("Using kmer size = %d", globalK)
+    setShiftKmerMask()
 
     if cpuProfile != "" {
         log.Printf("Writing CPU profile to %s", cpuProfile)
