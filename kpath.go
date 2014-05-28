@@ -60,6 +60,8 @@ var (
 	refFile           string
 	readFile          string
 	globalK           int
+    shiftKmerMask     Kmer
+
 	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
 	readStartInterval [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
 
@@ -140,6 +142,18 @@ func kmerToString(kmer Kmer, k int) string {
 	return string(s)
 }
 
+// setShiftKmerMask() initializes the kmer mask. This must be called anytime
+// globalK changes.
+func setShiftKmerMask() {
+    shiftKmerMask = Kmer(3 << 2*globalK)
+}
+
+// shiftKmer() creates a new kmer by shifting the given one over one base to the left
+// and adding the given next character at the right.
+func shiftKmer(kmer Kmer, next byte) Kmer {
+    return ((kmer<<2) &^ shiftKmerMask) | Kmer(next)
+}
+
 // RC computes the reverse complement of a single given nucleotide. Ns become
 // Ts as if they were As. Any other character induces a panic.
 func RC(c byte) byte {
@@ -216,6 +230,16 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 
 	log.Printf("Counting %v-mer transitions in reference file...\n", k)
 	for _, s := range seqs {
+        if len(s) <= k { continue }
+        contextMer := stringToKmer(s[:k])
+        for i := k; i < len(s)-k; i++ {
+            if _, ok := hash[contextMer]; ok {
+                hash[contextMer] = &KmerInfo{}
+            } 
+            hash[contextMer].next[acgt(s[i])] += observationInc
+            contextMer = shiftKmer(contextMer, acgt(s[i]))
+        }
+/*
 		for i := 0; i < len(s)-k; i++ {
 			km := stringToKmer(s[i : i+k])
 			_, ok := hash[km]
@@ -224,6 +248,7 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 			}
 			hash[km].next[acgt(s[i+k])] += observationInc
 		}
+        */
 	}
 	return hash
 }
@@ -265,11 +290,12 @@ func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
 }
 
 
-// intervalFor() returns the interval for the given character according to the
-// given distribution (transformed by the given weight transformation
-// function).
-func intervalFor(nextChar byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
-	letterIdx := int(acgt(nextChar))
+// intervalFor() returns the interval for the given character (represented as a
+// 2-bit encoded base) according to the given distribution (transformed by the
+// given weight transformation function).
+func intervalFor(letter byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
+	//letterIdx := int(acgt(nextChar))
+    letterIdx := int(letter)
 	for i := 0; i < len(dist); i++ {
 		w := weightOf(i, dist)
 
@@ -286,14 +312,14 @@ func intervalFor(nextChar byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn
 
 // nextInterval() computes the interval for the given context and updates the
 // default distribution and context distributions as required.
-func nextInterval(hash KmerHash, context string, next byte) (a uint64, b uint64, total uint64) {
-	kidx := acgt(next)
-	contextMer := stringToKmer(context)
+func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64, total uint64) {
+	//kidx := acgt(next)
+	//contextMer := stringToKmer(context)
 	info, ok := hash[contextMer]
 	// if the context exists, use that distribution
 	if ok {
 		contextExists++
-		a, b, total = intervalFor(next, info.next, contextWeight)
+		a, b, total = intervalFor(kidx, info.next, contextWeight)
 		if info.next[kidx] >= seenThreshold { // increment double if in the transcriptome
 			info.next[kidx] += observationInc
 		} else {
@@ -305,7 +331,7 @@ func nextInterval(hash KmerHash, context string, next byte) (a uint64, b uint64,
 		if ok {
 			contextExists--
 		}
-		a, b, total = intervalFor(next, defaultInterval, defaultWeight)
+		a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
 		defaultInterval[kidx]++
 
 		// add this to the context now
@@ -408,12 +434,15 @@ func writeCounts(f io.Writer, counts []int) {
 func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
 	context := r[:globalK]
+    contextMer := stringToKmer(context)
+
 	for i := globalK; i < len(r); i++ {
-		char := r[i]
-		a, b, total := nextInterval(hash, context, char)
+		char := acgt(r[i])
+		a, b, total := nextInterval(hash, contextMer, char)
 		err := coder.Encode(a, b, total)
 		DIE_ON_ERR(err, "Error encoding read: %s", r)
-		context = context[1:] + string(char)
+		//context = context[1:] + string(char)
+        contextMer = shiftKmer(contextMer, byte(char))
 	}
 }
 
@@ -561,29 +590,28 @@ func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out i
 	curBucket := 0
 	bucketCount := 0
 	for curBucket < len(kmers) {
-        context := kmers[curBucket]
-        contextMer = stringToKmer(context)
-
 		// write the bucket
-		buf.Write([]byte(context))
+		buf.Write([]byte(kmers[curBucket]))
 
+        contextMer = stringToKmer(kmers[curBucket])
 		// write the reads
 		for i := 0; i < readLen-len(kmers[0]); i++ {
 			// decode next symbol
 			symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
 			DIE_ON_ERR(err, "Fatal error decoding!")
+            b := byte(symb)
 
 			// write it out
-			next := baseFromBits(byte(symb))
-			buf.WriteByte(next)
+			buf.WriteByte(baseFromBits(b))
 
 			// update hash counts (throws away the computed interval; just
 			// called for side effects.)
-			nextInterval(hash, context, next)
+			nextInterval(hash, contextMer, b)
 
 			// update the new context
-			context = context[1:] + string(next)
-            contextMer = stringToKmer(context)
+			//context = context[1:] + string(next)
+            //contextMer = stringToKmer(context)
+            contextMer = shiftKmer(contextMer, b)
 		}
 
 		// at the end of the read; write a newline and increment the # of reads
@@ -662,6 +690,7 @@ func main() {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
     log.Printf("Using kmer size = %d", globalK)
+    setShiftKmerMask()
 
     if cpuProfile != "" {
         log.Printf("Writing CPU profile to %s", cpuProfile)

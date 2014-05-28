@@ -34,17 +34,19 @@ func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
 
 	// encode rest using the reference probs
 	context := r[:globalK]
+    contextMer := stringToKmer(context)
 	for ; i < len(r); i++ {
-		char := r[i]
+		char := acgt(r[i])
 		if smoothOption {
-			char = smoothError(hash, context, char)
+			char = smoothError(hash, contextMer, char)
 		}
-		a, b, total := nextInterval(hash, context, char)
+		a, b, total := nextInterval(hash, contextMer, char)
 		err := coder.Encode(a, b, total)
 		if err != nil {
 			return err
 		}
-		context = context[1:] + string(char)
+		//context = context[1:] + string(char)
+        contextMer = shiftKmer(contextMer, char)
 	}
 	return nil
 }
@@ -115,9 +117,9 @@ func writeVarLenInt(out *os.File, b uint64) {
 	}
 }
 
-func smoothError(hash KmerHash, context string, next byte) byte {
+func smoothError(hash KmerHash, contextMer Kmer, next byte) byte {
 	charCount++
-	if info, ok := hash[stringToKmer(context)]; ok {
+	if info, ok := hash[contextMer]; ok {
 		letterIdx := int(acgt(next))
 		if info.next[letterIdx] < seenThreshold {
 			smoothed++
