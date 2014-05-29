@@ -322,9 +322,6 @@ func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64
 	} else {
 		// if the context doesnt exist, use a simple default interval
 		defaultUsed++
-		if ok {
-			contextExists--
-		}
 		a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
 		defaultInterval[kidx]++
 
@@ -351,11 +348,13 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 // countMatchingContexts() counts the number of kmers present in the hash.
 func countMatchingContexts(hash KmerHash, r string) (n int) {
     contextMer := stringToKmer(r[:globalK])
-	for i := 0; i < len(r)-globalK; i++ {
+	for i := 0; i <= len(r)-globalK; i++ {
         if _, ok := hash[contextMer]; ok {
             n++
         }
-        contextMer = shiftKmer(contextMer, r[i+globalK])
+        if i+globalK < len(r) {
+            contextMer = shiftKmer(contextMer, r[i+globalK])
+        }
         /*
 		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
 			n++
@@ -376,7 +375,7 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []st
 	defer in.Close()
 
 	// put the reads into a global array, flipped if needed
-	reads := make([]string, 0)
+	reads := make([]string, 0, 1000000)
 	scanner := bufio.NewScanner(in)
 	for scanner.Scan() {
 		// remove spaces and convert on-ACGT to 'A'
