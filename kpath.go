@@ -10,13 +10,13 @@ x4. update error messages and panic messages to be more consistent
     // DIE_ON_ERROR(err, "Couldn't create bucket file: %v", err)
 x4.1 write out all the global options when encoding / decoding
 x5.2. add comments
+x6. profile to speed up
+x7. parallelize
 
 5.0. read / write READLEN someplace
 5.1. test out on 3 more files
 
 5. conserve memory with a DNAString type (?)
-6. profile to speed up
-7. parallelize
 8. add some more unit tests
 */
 
@@ -30,6 +30,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+    "runtime"
     "runtime/pprof"
 
 	"kingsford/arithc"
@@ -40,14 +41,19 @@ import (
 // Kmer types
 //===================================================================
 
-type Kmer uint64
+// A Kmer represents a kmer of size < 32.
+type Kmer uint32
 
+// A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
 	next [len(ALPHA)]uint32
 }
 
+// A KmerHash contains the context database.
 type KmerHash map[Kmer]*KmerInfo
 
+// A WeightXformFcn represents a function that can transform distribution
+// counts.
 type WeightXformFcn func(int, [len(ALPHA)]uint32) uint64
 
 //===================================================================
@@ -69,14 +75,6 @@ var (
 	contextExists int
 	smoothed      int
 	flipped       int
-)
-
-// global variables for smoothing
-var (
-	lastSmooth   [len(ALPHA)]uint64 = [...]uint64{1, 2, 3, 4}
-	charCount    uint64
-	smoothFile   *os.File
-	tmpByteSlice []byte = make([]byte, 2)
 )
 
 const (
@@ -153,7 +151,6 @@ func setShiftKmerMask() {
 // shiftKmer() creates a new kmer by shifting the given one over one base to the left
 // and adding the given next character at the right.
 func shiftKmer(kmer Kmer, next byte) Kmer {
-    //return kmer<<2 | Kmer(next)
     return ((kmer<<2) | Kmer(next)) & shiftKmerMask
 }
 
@@ -288,7 +285,6 @@ func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
 // 2-bit encoded base) according to the given distribution (transformed by the
 // given weight transformation function).
 func intervalFor(letter byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
-	//letterIdx := int(acgt(nextChar))
     letterIdx := int(letter)
 	for i := 0; i < len(dist); i++ {
 		w := weightOf(i, dist)
@@ -307,8 +303,6 @@ func intervalFor(letter byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) 
 // nextInterval() computes the interval for the given context and updates the
 // default distribution and context distributions as required.
 func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64, total uint64) {
-	//kidx := acgt(next)
-	//contextMer := stringToKmer(context)
 	info, ok := hash[contextMer]
 	// if the context exists, use that distribution
 	if ok {
@@ -334,17 +328,6 @@ func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64
 
 // countMatchingObservations() counts the number of observaions of kmers in the
 // read.
-/*func countMatchingObservations(hash KmerHash, r string) (n uint32) {
-	context := r[:globalK]
-	for i := globalK; i <= len(r)-globalK; i++ {
-		if H, ok := hash[stringToKmer(context)]; ok {
-			n += H.next[acgt(r[i])]
-		}
-		context = context[1:] + string(r[i])
-	}
-	return
-}*/
-
 func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 	contextMer := stringToKmer(r[:globalK])
 	for i := globalK; i < len(r); i++ {
@@ -357,33 +340,6 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 	return
 }
 
-// countMatchingContexts() counts the number of kmers present in the hash.
-func countMatchingContexts(hash KmerHash, r string) (n int) {
-    /*
-	context := r[:globalK]
-	for i := globalK; i <= len(r)-globalK; i++ {
-		if _, ok := hash[stringToKmer(context)]; ok {
-			n++
-		}
-		context = context[1:] + string(r[i])
-	}
-	return */
-
-    contextMer := stringToKmer(r[:globalK])
-	for i := 0; i <= len(r)-globalK; i++ {
-        if _, ok := hash[contextMer]; ok {
-            n++
-        }
-        if i+globalK < len(r) {
-            contextMer = shiftKmer(contextMer, r[i+globalK])
-        }
-        /*
-		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
-			n++
-		} */
-	} 
-	return
-}
 
 // readAndFlipReads() reads the reads and reverse complements them if the
 // reverse complement matches the hash better (according to a countMatching*
@@ -462,7 +418,6 @@ func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) 
 		a, b, total := nextInterval(hash, contextMer, char)
 		err := coder.Encode(a, b, total)
 		DIE_ON_ERR(err, "Error encoding read: %s", r)
-		//context = context[1:] + string(char)
         contextMer = shiftKmer(contextMer, byte(char))
 	}
 }
@@ -583,7 +538,6 @@ func dart(dist [len(ALPHA)]uint32, target uint32, weightOf WeightXformFcn) (uint
 
 // lookup() is called by arithc.Decoder to find an interval that contains the given value t.
 func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
-	//ctx := stringToKmer(context)
 	if info, ok := hash[context]; ok {
 		return dart(info.next, uint32(t), contextWeight)
 	} else {
@@ -647,8 +601,6 @@ func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out i
 			nextInterval(hash, contextMer, b)
 
 			// update the new context
-			//context = context[1:] + string(next)
-            //contextMer = stringToKmer(context)
             contextMer = shiftKmer(contextMer, b)
 		}
 
@@ -706,6 +658,9 @@ func writeGlobalOptions() {
 // argument (which is either encode or decode).
 func main() {
 	log.Println("Starting kpath version 5-28-14")
+
+    log.Println("Maximum threads = 4")
+    runtime.GOMAXPROCS(4)
 
 	// parse the command line
     const (

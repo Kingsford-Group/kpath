@@ -10,6 +10,14 @@ import (
 	"kingsford/arithc"
 )
 
+// global variables for smoothing
+var (
+	lastSmooth   [len(ALPHA)]uint64 = [...]uint64{1, 2, 3, 4}
+	charCount    uint64
+	smoothFile   *os.File
+	tmpByteSlice []byte = make([]byte, 2)
+)
+
 /* encode a single read: uses 1 scheme for initial part, and 1 scheme for the rest */
 func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
 	// guess whether we should reverse complement the read
@@ -131,4 +139,33 @@ func smoothError(hash KmerHash, contextMer Kmer, next byte) byte {
 	}
 	return next
 }
+
+// countMatchingContexts() counts the number of kmers present in the hash.
+func countMatchingContexts(hash KmerHash, r string) (n int) {
+    /*
+	context := r[:globalK]
+	for i := globalK; i <= len(r)-globalK; i++ {
+		if _, ok := hash[stringToKmer(context)]; ok {
+			n++
+		}
+		context = context[1:] + string(r[i])
+	}
+	return */
+
+    contextMer := stringToKmer(r[:globalK])
+	for i := 0; i <= len(r)-globalK; i++ {
+        if _, ok := hash[contextMer]; ok {
+            n++
+        }
+        if i+globalK < len(r) {
+            contextMer = shiftKmer(contextMer, r[i+globalK])
+        }
+        /*
+		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
+			n++
+		} */
+	} 
+	return
+}
+
 
