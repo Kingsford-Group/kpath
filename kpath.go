@@ -360,10 +360,16 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 
 // countMatchingContexts() counts the number of kmers present in the hash.
 func countMatchingContexts(hash KmerHash, r string) (n int) {
+    contextMer := stringToKmer(r[:globalK])
 	for i := 0; i <= len(r)-globalK; i++ {
+        if _, ok := hash[contextMer]; ok {
+            n++
+        }
+        contextMer = shiftKmer(contextMer, r[i+globalK])
+        /*
 		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
 			n++
-		}
+		} */
 	}
 	return
 }
