@@ -243,16 +243,6 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
             hash[contextMer].next[next] += observationInc
             contextMer = shiftKmer(contextMer, next)
         }
-/*
-		for i := 0; i < len(s)-k; i++ {
-			km := stringToKmer(s[i : i+k])
-			_, ok := hash[km]
-			if !ok {
-				hash[km] = &KmerInfo{}
-			}
-			hash[km].next[acgt(s[i+k])] += observationInc
-		}
-        */
 	}
 	return hash
 }
@@ -361,7 +351,7 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 // countMatchingContexts() counts the number of kmers present in the hash.
 func countMatchingContexts(hash KmerHash, r string) (n int) {
     contextMer := stringToKmer(r[:globalK])
-	for i := 0; i <= len(r)-globalK; i++ {
+	for i := 0; i < len(r)-globalK; i++ {
         if _, ok := hash[contextMer]; ok {
             n++
         }
@@ -678,7 +668,7 @@ func writeGlobalOptions() {
 // argument (which is either encode or decode).
 func main() {
 	log.SetPrefix("kpath: ")
-	log.Println("Starting kpath version 5-27-14")
+	log.Println("Starting kpath version 5-28-14")
 
 	// parse the command line
     const (
