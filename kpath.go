@@ -235,12 +235,13 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 	for _, s := range seqs {
         if len(s) <= k { continue }
         contextMer := stringToKmer(s[:k])
-        for i := 1; i < len(s)-k; i++ {
+        for i := 0; i < len(s)-k; i++ {
             if _, ok := hash[contextMer]; !ok {
                 hash[contextMer] = &KmerInfo{}
             } 
-            hash[contextMer].next[acgt(s[i])] += observationInc
-            contextMer = shiftKmer(contextMer, acgt(s[i]))
+            next := acgt(s[i+k])
+            hash[contextMer].next[next] += observationInc
+            contextMer = shiftKmer(contextMer, next)
         }
 /*
 		for i := 0; i < len(s)-k; i++ {
