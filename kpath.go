@@ -88,7 +88,7 @@ const (
 	smoothOption    bool = false
 	flipReadsOption bool = true
 
-    cpuProfile string = "encode.pprof" // set to nonempty to write profile to this file
+    cpuProfile string = "" //"encode.pprof" // set to nonempty to write profile to this file
 )
 
 //===================================================================
