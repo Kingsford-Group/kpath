@@ -347,6 +347,15 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 
 // countMatchingContexts() counts the number of kmers present in the hash.
 func countMatchingContexts(hash KmerHash, r string) (n int) {
+	context := r[:globalK]
+	for i := globalK; i <= len(r)-globalK; i++ {
+		if _, ok := hash[stringToKmer(context)]; ok {
+			n++
+		}
+		context = context[1:] + string(r[i])
+	}
+	return
+    /*
     contextMer := stringToKmer(r[:globalK])
 	for i := 0; i <= len(r)-globalK; i++ {
         if _, ok := hash[contextMer]; ok {
@@ -358,8 +367,8 @@ func countMatchingContexts(hash KmerHash, r string) (n int) {
         /*
 		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
 			n++
-		} */
-	}
+		} 
+	} */
 	return
 }
 
@@ -666,7 +675,6 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.SetPrefix("kpath: ")
 	log.Println("Starting kpath version 5-28-14")
 
 	// parse the command line
@@ -681,8 +689,10 @@ func main() {
 	var mode int
 	if os.Args[1][0] == 'e' {
 		mode = ENCODE
+	    log.SetPrefix("kpath (encode): ")
 	} else {
 		mode = DECODE
+	    log.SetPrefix("kpath (decode): ")
 	}
 	encodeFlags.Parse(os.Args[2:])
 	if globalK <= 0 {
