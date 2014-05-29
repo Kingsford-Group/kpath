@@ -509,8 +509,8 @@ func readBucketCounts(countsFN string) ([]int, int) {
 	DIE_ON_ERR(err, "Couldn't create gzip reader: %v")
 	defer c.Close()
 
-	var n int
-	_, err := fmt.Fscanf(c, "%d", &readlen)
+	var n, readlen int
+	_, err = fmt.Fscanf(c, "%d", &readlen)
 	DIE_ON_ERR(err, "Couldn't read read length from counts file")
 
 	counts := make([]int, 0)
