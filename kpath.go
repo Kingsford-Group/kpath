@@ -491,7 +491,11 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	defer writer.Close()
 
 	/*** The main work to encode the bucket names ***/
-	encodeKmersToFile(buckets, writer)
+    waitForBuckets := make(chan bool)
+    go func() {
+        encodeKmersToFile(buckets, writer)
+        close(waitForBuckets)
+    }()
 
 	// write out the counts
 	countF, err := os.Create(outBaseName + ".counts")
@@ -504,13 +508,26 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	defer countZ.Close()
 
 	/*** The main work to encode the bucket counts ***/
-	writeCounts(countZ, counts)
+    waitForCounts := make(chan bool)
+    go func() {
+        writeCounts(countZ, counts)
+        close(waitForCounts)
+    }()
 
 	/*** The main work to encode the read tails ***/
 	log.Printf("Encoding reads...")
-	for _, r := range reads {
-		encodeSingleReadWithBucket(r, hash, coder)
-	}
+    waitForReads := make(chan bool)
+    go func() {
+        for _, r := range reads {
+            encodeSingleReadWithBucket(r, hash, coder)
+        }
+        close(waitForReads)
+    }()
+
+    // Wait for each of the coders to finish
+    <-waitForBuckets
+    <-waitForCounts
+    <-waitForReads
 	log.Printf("done.")
 	return len(reads)
 }
@@ -723,10 +740,15 @@ func main() {
     } 
 
 	// count the kmers in the reference
-	hash := countKmersInReference(globalK, refFile)
-	log.Printf("There are %v unique %v-mers in the reference\n",
-		len(hash), globalK)
-	capTransitionCounts(hash, 2)
+    var hash KmerHash
+    waitForReference := make(chan bool)
+    go func() {
+        hash = countKmersInReference(globalK, refFile)
+        log.Printf("There are %v unique %v-mers in the reference\n",
+            len(hash), globalK)
+        capTransitionCounts(hash, 2)
+        close(waitForReference)
+    }()
 
     writeGlobalOptions()
 
@@ -757,6 +779,7 @@ func main() {
 		defer encoder.Finish()
 
 		// encode reads
+        <-waitForReference
 		n := encodeWithBuckets(readFile, outFile, hash, encoder)
 		log.Printf("Smoothed (changed) %v characters", smoothed)
 		log.Printf("Reads Flipped: %v", flipped)
@@ -773,11 +796,21 @@ func main() {
 		log.Printf("Reading from %s, %s, and %s", tailsFN, headsFN, countsFN)
 
 		// read the bucket names
-		kmers := decodeKmersFromFile(headsFN, globalK)
-		sort.Strings(kmers)
+        var kmers []string
+        waitForBuckets := make(chan bool)
+        go func() {
+            kmers = decodeKmersFromFile(headsFN, globalK)
+            sort.Strings(kmers)
+            close(waitForBuckets)
+        }()
 
 		// read the bucket counts
-		counts := readBucketCounts(countsFN)
+        var counts []int
+        waitForCounts := make(chan bool)
+        go func() {
+            counts = readBucketCounts(countsFN)
+            close(waitForCounts)
+        }()
 
 		// open encoded read file
 		encIn, err := os.Open(tailsFN)
@@ -799,6 +832,9 @@ func main() {
 		defer outF.Close()
 
 		READLEN := 35
+        <-waitForReference
+        <-waitForBuckets
+        <-waitForCounts
 		decodeReads(kmers, counts, hash, READLEN, outF, decoder)
 	}
 	log.Printf("Default interval used %v times and context used %v times",
