@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"log"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 
 	"kingsford/arithc"
 )
@@ -42,7 +42,7 @@ func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
 
 	// encode rest using the reference probs
 	context := r[:globalK]
-    contextMer := stringToKmer(context)
+	contextMer := stringToKmer(context)
 	for ; i < len(r); i++ {
 		char := acgt(r[i])
 		if smoothOption {
@@ -54,7 +54,7 @@ func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
 			return err
 		}
 		//context = context[1:] + string(char)
-        contextMer = shiftKmer(contextMer, char)
+		contextMer = shiftKmer(contextMer, char)
 	}
 	return nil
 }
@@ -142,30 +142,28 @@ func smoothError(hash KmerHash, contextMer Kmer, next byte) byte {
 
 // countMatchingContexts() counts the number of kmers present in the hash.
 func countMatchingContexts(hash KmerHash, r string) (n int) {
-    /*
-	context := r[:globalK]
-	for i := globalK; i <= len(r)-globalK; i++ {
-		if _, ok := hash[stringToKmer(context)]; ok {
+	/*
+		context := r[:globalK]
+		for i := globalK; i <= len(r)-globalK; i++ {
+			if _, ok := hash[stringToKmer(context)]; ok {
+				n++
+			}
+			context = context[1:] + string(r[i])
+		}
+		return */
+
+	contextMer := stringToKmer(r[:globalK])
+	for i := 0; i <= len(r)-globalK; i++ {
+		if _, ok := hash[contextMer]; ok {
 			n++
 		}
-		context = context[1:] + string(r[i])
+		if i+globalK < len(r) {
+			contextMer = shiftKmer(contextMer, r[i+globalK])
+		}
+		/*
+			if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
+				n++
+			} */
 	}
-	return */
-
-    contextMer := stringToKmer(r[:globalK])
-	for i := 0; i <= len(r)-globalK; i++ {
-        if _, ok := hash[contextMer]; ok {
-            n++
-        }
-        if i+globalK < len(r) {
-            contextMer = shiftKmer(contextMer, r[i+globalK])
-        }
-        /*
-		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
-			n++
-		} */
-	} 
 	return
 }
-
-

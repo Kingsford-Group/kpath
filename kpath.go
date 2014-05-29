@@ -28,10 +28,10 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strings"
-    "runtime"
-    "runtime/pprof"
 
 	"kingsford/arithc"
 	"kingsford/bitio"
@@ -61,12 +61,12 @@ type WeightXformFcn func(int, [len(ALPHA)]uint32) uint64
 //===================================================================
 
 var (
-	encodeFlags       *flag.FlagSet
-	outFile           string
-	refFile           string
-	readFile          string
-	globalK           int
-    shiftKmerMask     Kmer
+	encodeFlags   *flag.FlagSet
+	outFile       string
+	refFile       string
+	readFile      string
+	globalK       int
+	shiftKmerMask Kmer
 
 	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
 	readStartInterval [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
@@ -86,7 +86,7 @@ const (
 	smoothOption    bool = false
 	flipReadsOption bool = true
 
-    cpuProfile string = "" //"encode.pprof" // set to nonempty to write profile to this file
+	cpuProfile string = "" //"encode.pprof" // set to nonempty to write profile to this file
 )
 
 //===================================================================
@@ -108,7 +108,7 @@ func acgt(a byte) byte {
 	case 'T':
 		return 3
 	}
-    panic(fmt.Errorf("Bad character: %s!", string(a)))
+	panic(fmt.Errorf("Bad character: %s!", string(a)))
 }
 
 // baseFromBits() returns the ASCII letter for the given 2-bit encoding.
@@ -143,15 +143,15 @@ func kmerToString(kmer Kmer, k int) string {
 // setShiftKmerMask() initializes the kmer mask. This must be called anytime
 // globalK changes.
 func setShiftKmerMask() {
-    for i := 0; i < globalK; i++ {
-        shiftKmerMask = (shiftKmerMask << 2) | 3
-    }
+	for i := 0; i < globalK; i++ {
+		shiftKmerMask = (shiftKmerMask << 2) | 3
+	}
 }
 
 // shiftKmer() creates a new kmer by shifting the given one over one base to the left
 // and adding the given next character at the right.
 func shiftKmer(kmer Kmer, next byte) Kmer {
-    return ((kmer<<2) | Kmer(next)) & shiftKmerMask
+	return ((kmer << 2) | Kmer(next)) & shiftKmerMask
 }
 
 // RC computes the reverse complement of a single given nucleotide. Ns become
@@ -160,8 +160,8 @@ func RC(c byte) byte {
 	switch c {
 	case 'A':
 		return 'T'
-    case 'N':
-        return 'T'
+	case 'N':
+		return 'T'
 	case 'C':
 		return 'G'
 	case 'G':
@@ -169,7 +169,7 @@ func RC(c byte) byte {
 	case 'T':
 		return 'A'
 	}
-    panic(fmt.Errorf("Bad character: %s!", string(c)))
+	panic(fmt.Errorf("Bad character: %s!", string(c)))
 }
 
 // reverseComplement() returns the reverse complement of the given string
@@ -217,7 +217,7 @@ func readReferenceFile(fastaFile string) []string {
 			cur = append(cur, line)
 		}
 	}
-    DIE_ON_ERR(scanner.Err(), "Couldn't finish reading reference")
+	DIE_ON_ERR(scanner.Err(), "Couldn't finish reading reference")
 	return out
 }
 
@@ -230,16 +230,18 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 
 	log.Printf("Counting %v-mer transitions in reference file...\n", k)
 	for _, s := range seqs {
-        if len(s) <= k { continue }
-        contextMer := stringToKmer(s[:k])
-        for i := 0; i < len(s)-k; i++ {
-            if _, ok := hash[contextMer]; !ok {
-                hash[contextMer] = &KmerInfo{}
-            } 
-            next := acgt(s[i+k])
-            hash[contextMer].next[next] += observationInc
-            contextMer = shiftKmer(contextMer, next)
-        }
+		if len(s) <= k {
+			continue
+		}
+		contextMer := stringToKmer(s[:k])
+		for i := 0; i < len(s)-k; i++ {
+			if _, ok := hash[contextMer]; !ok {
+				hash[contextMer] = &KmerInfo{}
+			}
+			next := acgt(s[i+k])
+			hash[contextMer].next[next] += observationInc
+			contextMer = shiftKmer(contextMer, next)
+		}
 	}
 	return hash
 }
@@ -280,12 +282,11 @@ func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
 	return uint64(dist[charIdx])
 }
 
-
 // intervalFor() returns the interval for the given character (represented as a
 // 2-bit encoded base) according to the given distribution (transformed by the
 // given weight transformation function).
 func intervalFor(letter byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
-    letterIdx := int(letter)
+	letterIdx := int(letter)
 	for i := 0; i < len(dist); i++ {
 		w := weightOf(i, dist)
 
@@ -331,7 +332,7 @@ func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64
 func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 	contextMer := stringToKmer(r[:globalK])
 	for i := globalK; i < len(r); i++ {
-        symb := acgt(r[i])
+		symb := acgt(r[i])
 		if H, ok := hash[contextMer]; ok {
 			n += H.next[symb]
 		}
@@ -339,7 +340,6 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 	}
 	return
 }
-
 
 // readAndFlipReads() reads the reads and reverse complements them if the
 // reverse complement matches the hash better (according to a countMatching*
@@ -398,8 +398,9 @@ func listBuckets(reads []string) ([]string, []int) {
 }
 
 // writeCounts() writes the counts list out to the given writer.
-func writeCounts(f io.Writer, counts []int) {
+func writeCounts(f io.Writer, readlen int, counts []int) {
 	log.Printf("Writing counts...")
+	fmt.Fprintf(f, "%d ", readlen)
 	for _, c := range counts {
 		fmt.Fprintf(f, "%d ", c)
 	}
@@ -411,14 +412,14 @@ func writeCounts(f io.Writer, counts []int) {
 func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
 	context := r[:globalK]
-    contextMer := stringToKmer(context)
+	contextMer := stringToKmer(context)
 
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
 		a, b, total := nextInterval(hash, contextMer, char)
 		err := coder.Encode(a, b, total)
 		DIE_ON_ERR(err, "Error encoding read: %s", r)
-        contextMer = shiftKmer(contextMer, byte(char))
+		contextMer = shiftKmer(contextMer, byte(char))
 	}
 }
 
@@ -446,11 +447,11 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	defer writer.Close()
 
 	/*** The main work to encode the bucket names ***/
-    waitForBuckets := make(chan bool)
-    go func() {
-        encodeKmersToFile(buckets, writer)
-        close(waitForBuckets)
-    }()
+	waitForBuckets := make(chan bool)
+	go func() {
+		encodeKmersToFile(buckets, writer)
+		close(waitForBuckets)
+	}()
 
 	// write out the counts
 	countF, err := os.Create(outBaseName + ".counts")
@@ -463,26 +464,26 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	defer countZ.Close()
 
 	/*** The main work to encode the bucket counts ***/
-    waitForCounts := make(chan bool)
-    go func() {
-        writeCounts(countZ, counts)
-        close(waitForCounts)
-    }()
+	waitForCounts := make(chan bool)
+	go func() {
+		writeCounts(countZ, len(reads[0]), counts)
+		close(waitForCounts)
+	}()
 
 	/*** The main work to encode the read tails ***/
-	log.Printf("Encoding reads...")
-    waitForReads := make(chan bool)
-    go func() {
-        for _, r := range reads {
-            encodeSingleReadWithBucket(r, hash, coder)
-        }
-        close(waitForReads)
-    }()
+	log.Printf("Encoding reads, each of length %d ...", len(reads[0]))
+	waitForReads := make(chan bool)
+	go func() {
+		for _, r := range reads {
+			encodeSingleReadWithBucket(r, hash, coder)
+		}
+		close(waitForReads)
+	}()
 
-    // Wait for each of the coders to finish
-    <-waitForBuckets
-    <-waitForCounts
-    <-waitForReads
+	// Wait for each of the coders to finish
+	<-waitForBuckets
+	<-waitForCounts
+	<-waitForReads
 	log.Printf("done.")
 	return len(reads)
 }
@@ -495,7 +496,7 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 // extract a list of bucket sizes that were written by the encoding. The given
 // file must have been written by the coder --- it is assumed to be a gzipped
 // list of space-separated ASCII numbers.
-func readBucketCounts(countsFN string) []int {
+func readBucketCounts(countsFN string) ([]int, int) {
 	log.Printf("Reading bucket counts from %v", countsFN)
 
 	// open the count file
@@ -508,8 +509,11 @@ func readBucketCounts(countsFN string) []int {
 	DIE_ON_ERR(err, "Couldn't create gzip reader: %v")
 	defer c.Close()
 
-	counts := make([]int, 0)
 	var n int
+	readlen, err := fmt.Fscanf(c, "%d", &n)
+	DIE_ON_ERR(err, "Couldn't read read length from counts file")
+
+	counts := make([]int, 0)
 	err = nil
 	for x := 1; err == nil && x > 0; {
 		x, err = fmt.Fscanf(c, "%d", &n)
@@ -518,7 +522,7 @@ func readBucketCounts(countsFN string) []int {
 		}
 	}
 	log.Printf("done; read %d counts", len(counts))
-	return counts
+	return counts, readlen
 }
 
 // dart() finds the interval in the given distribution that contains the given
@@ -573,7 +577,7 @@ func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out i
 
 	buf := bufio.NewWriter(out)
 
-    var contextMer Kmer
+	var contextMer Kmer
 	lu := func(t uint64) (uint64, uint64, uint64) {
 		return lookup(hash, contextMer, t)
 	}
@@ -585,13 +589,13 @@ func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out i
 		// write the bucket
 		buf.Write([]byte(kmers[curBucket]))
 
-        contextMer = stringToKmer(kmers[curBucket])
+		contextMer = stringToKmer(kmers[curBucket])
 		// write the reads
 		for i := 0; i < readLen-len(kmers[0]); i++ {
 			// decode next symbol
 			symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
 			DIE_ON_ERR(err, "Fatal error decoding!")
-            b := byte(symb)
+			b := byte(symb)
 
 			// write it out
 			buf.WriteByte(baseFromBits(b))
@@ -601,7 +605,7 @@ func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out i
 			nextInterval(hash, contextMer, b)
 
 			// update the new context
-            contextMer = shiftKmer(contextMer, b)
+			contextMer = shiftKmer(contextMer, b)
 		}
 
 		// at the end of the read; write a newline and increment the # of reads
@@ -646,12 +650,12 @@ func init() {
 // encoding / decoding. Files encoded with one set of options can only be
 // decoded using the same set of options.
 func writeGlobalOptions() {
-    log.Printf("Option: psudeoCount = %d", pseudoCount)
-    log.Printf("Option: observationWeight = %d", observationWeight)
-    log.Printf("Option: seenThreshold = %d", seenThreshold)
-    log.Printf("Option: observationInc = %d", observationInc)
-    log.Printf("Option: smoothOption = %v", smoothOption)
-    log.Printf("Option: flipReadsOption = %v", flipReadsOption)
+	log.Printf("Option: psudeoCount = %d", pseudoCount)
+	log.Printf("Option: observationWeight = %d", observationWeight)
+	log.Printf("Option: seenThreshold = %d", seenThreshold)
+	log.Printf("Option: observationInc = %d", observationInc)
+	log.Printf("Option: smoothOption = %v", smoothOption)
+	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
 }
 
 // main() encodes or decodes a set of reads based on the first command line
@@ -659,14 +663,14 @@ func writeGlobalOptions() {
 func main() {
 	log.Println("Starting kpath version 5-28-14")
 
-    log.Println("Maximum threads = 4")
-    runtime.GOMAXPROCS(4)
+	log.Println("Maximum threads = 4")
+	runtime.GOMAXPROCS(4)
 
 	// parse the command line
-    const (
-        ENCODE int = 1
-        DECODE int = 2
-    )
+	const (
+		ENCODE int = 1
+		DECODE int = 2
+	)
 	if len(os.Args) < 2 {
 		encodeFlags.PrintDefaults()
 		os.Exit(1)
@@ -674,38 +678,38 @@ func main() {
 	var mode int
 	if os.Args[1][0] == 'e' {
 		mode = ENCODE
-	    log.SetPrefix("kpath (encode): ")
+		log.SetPrefix("kpath (encode): ")
 	} else {
 		mode = DECODE
-	    log.SetPrefix("kpath (decode): ")
+		log.SetPrefix("kpath (decode): ")
 	}
 	encodeFlags.Parse(os.Args[2:])
 	if globalK <= 0 {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
-    log.Printf("Using kmer size = %d", globalK)
-    setShiftKmerMask()
+	log.Printf("Using kmer size = %d", globalK)
+	setShiftKmerMask()
 
-    if cpuProfile != "" {
-        log.Printf("Writing CPU profile to %s", cpuProfile)
-        cpuF, err := os.Create(cpuProfile)
-        DIE_ON_ERR(err, "Couldn't create CPU profile file %s", cpuProfile)
-        pprof.StartCPUProfile(cpuF)
-        defer pprof.StopCPUProfile()
-    } 
+	if cpuProfile != "" {
+		log.Printf("Writing CPU profile to %s", cpuProfile)
+		cpuF, err := os.Create(cpuProfile)
+		DIE_ON_ERR(err, "Couldn't create CPU profile file %s", cpuProfile)
+		pprof.StartCPUProfile(cpuF)
+		defer pprof.StopCPUProfile()
+	}
 
 	// count the kmers in the reference
-    var hash KmerHash
-    waitForReference := make(chan bool)
-    go func() {
-        hash = countKmersInReference(globalK, refFile)
-        log.Printf("There are %v unique %v-mers in the reference\n",
-            len(hash), globalK)
-        capTransitionCounts(hash, 2)
-        close(waitForReference)
-    }()
+	var hash KmerHash
+	waitForReference := make(chan bool)
+	go func() {
+		hash = countKmersInReference(globalK, refFile)
+		log.Printf("There are %v unique %v-mers in the reference\n",
+			len(hash), globalK)
+		capTransitionCounts(hash, 2)
+		close(waitForReference)
+	}()
 
-    writeGlobalOptions()
+	writeGlobalOptions()
 
 	if mode == ENCODE {
 		/* encode -k -ref -reads=FOO.seq -out=OUT
@@ -734,7 +738,7 @@ func main() {
 		defer encoder.Finish()
 
 		// encode reads
-        <-waitForReference
+		<-waitForReference
 		n := encodeWithBuckets(readFile, outFile, hash, encoder)
 		log.Printf("Smoothed (changed) %v characters", smoothed)
 		log.Printf("Reads Flipped: %v", flipped)
@@ -751,21 +755,22 @@ func main() {
 		log.Printf("Reading from %s, %s, and %s", tailsFN, headsFN, countsFN)
 
 		// read the bucket names
-        var kmers []string
-        waitForBuckets := make(chan bool)
-        go func() {
-            kmers = decodeKmersFromFile(headsFN, globalK)
-            sort.Strings(kmers)
-            close(waitForBuckets)
-        }()
+		var kmers []string
+		waitForBuckets := make(chan bool)
+		go func() {
+			kmers = decodeKmersFromFile(headsFN, globalK)
+			sort.Strings(kmers)
+			close(waitForBuckets)
+		}()
 
 		// read the bucket counts
-        var counts []int
-        waitForCounts := make(chan bool)
-        go func() {
-            counts = readBucketCounts(countsFN)
-            close(waitForCounts)
-        }()
+		var counts []int
+		var readlen int
+		waitForCounts := make(chan bool)
+		go func() {
+			counts, readlen = readBucketCounts(countsFN)
+			close(waitForCounts)
+		}()
 
 		// open encoded read file
 		encIn, err := os.Open(tailsFN)
@@ -786,11 +791,11 @@ func main() {
 		DIE_ON_ERR(err, "Couldn't create output file %s", outFile)
 		defer outF.Close()
 
-		READLEN := 35
-        <-waitForReference
-        <-waitForBuckets
-        <-waitForCounts
-		decodeReads(kmers, counts, hash, READLEN, outF, decoder)
+		<-waitForReference
+		<-waitForBuckets
+		<-waitForCounts
+		log.Printf("Read length = %d", readlen)
+		decodeReads(kmers, counts, hash, readlen, outF, decoder)
 	}
 	log.Printf("Default interval used %v times and context used %v times",
 		defaultUsed, contextExists)

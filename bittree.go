@@ -3,9 +3,9 @@ package main
 import (
 	"bufio"
 	"compress/gzip"
+	"fmt"
 	"log"
 	"os"
-    "fmt"
 
 	"kingsford/bitio"
 )
