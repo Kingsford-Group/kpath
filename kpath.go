@@ -334,7 +334,7 @@ func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64
 
 // countMatchingObservations() counts the number of observaions of kmers in the
 // read.
-func countMatchingObservations(hash KmerHash, r string) (n uint32) {
+/*func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 	context := r[:globalK]
 	for i := globalK; i <= len(r)-globalK; i++ {
 		if H, ok := hash[stringToKmer(context)]; ok {
@@ -343,10 +343,23 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 		context = context[1:] + string(r[i])
 	}
 	return
+}*/
+
+func countMatchingObservations(hash KmerHash, r string) (n uint32) {
+	contextMer := stringToKmer(r[:globalK])
+	for i := globalK; i < len(r); i++ {
+        symb := acgt(r[i])
+		if H, ok := hash[contextMer]; ok {
+			n += H.next[symb]
+		}
+		contextMer = shiftKmer(contextMer, symb)
+	}
+	return
 }
 
 // countMatchingContexts() counts the number of kmers present in the hash.
 func countMatchingContexts(hash KmerHash, r string) (n int) {
+    /*
 	context := r[:globalK]
 	for i := globalK; i <= len(r)-globalK; i++ {
 		if _, ok := hash[stringToKmer(context)]; ok {
@@ -354,8 +367,8 @@ func countMatchingContexts(hash KmerHash, r string) (n int) {
 		}
 		context = context[1:] + string(r[i])
 	}
-	return
-    /*
+	return */
+
     contextMer := stringToKmer(r[:globalK])
 	for i := 0; i <= len(r)-globalK; i++ {
         if _, ok := hash[contextMer]; ok {
@@ -367,8 +380,8 @@ func countMatchingContexts(hash KmerHash, r string) (n int) {
         /*
 		if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
 			n++
-		} 
-	} */
+		} */
+	} 
 	return
 }
 
@@ -390,9 +403,9 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []st
 		// remove spaces and convert on-ACGT to 'A'
 		r := strings.Replace(strings.TrimSpace(strings.ToUpper(scanner.Text())), "N", "A", -1)
 		if flipReadsOption {
-			n1 := countMatchingContexts(hash, r)
+			n1 := countMatchingObservations(hash, r)
 			rcr := reverseComplement(r)
-			n2 := countMatchingContexts(hash, rcr)
+			n2 := countMatchingObservations(hash, rcr)
 			// if they are tied, take the lexigographically smaller one
 			if n2 > n1 || (n2 == n1 && rcr < r) {
 				r = rcr
