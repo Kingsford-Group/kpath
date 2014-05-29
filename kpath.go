@@ -12,8 +12,8 @@ x4.1 write out all the global options when encoding / decoding
 x5.2. add comments
 x6. profile to speed up
 x7. parallelize
+x5.0. read / write READLEN someplace
 
-5.0. read / write READLEN someplace
 5.1. test out on 3 more files
 
 5. conserve memory with a DNAString type (?)
@@ -510,7 +510,7 @@ func readBucketCounts(countsFN string) ([]int, int) {
 	defer c.Close()
 
 	var n int
-	readlen, err := fmt.Fscanf(c, "%d", &n)
+	_, err := fmt.Fscanf(c, "%d", &readlen)
 	DIE_ON_ERR(err, "Couldn't read read length from counts file")
 
 	counts := make([]int, 0)
