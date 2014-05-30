@@ -1,23 +1,13 @@
 package main
 
 /* TODO:
-x0. change pseudocount to be max (or else change the seen threshold)
-x1. fix filename handling (including outputting filename information as a log)
-x why isn't TTTT...TTT flipped? b/c it's tied
-x2. compress counts and bittree directly from here (and uncompress bittree when reading it)
-x3. move unused code over to unused.no file
-x4. update error messages and panic messages to be more consistent
-    // DIE_ON_ERROR(err, "Couldn't create bucket file: %v", err)
-x4.1 write out all the global options when encoding / decoding
-x5.2. add comments
-x6. profile to speed up
-x7. parallelize
-x5.0. read / write READLEN someplace
 
-5.1. test out on 3 more files
+1. Paired ends:
+    - bucket1 bucket2 XXX YYY
+2. Handle "N"s by writing their locations to a separate file
 
-5. conserve memory with a DNAString type (?)
-8. add some more unit tests
+4. conserve memory with a DNAString type (?)
+5. add some more unit tests
 */
 
 import (
@@ -32,6 +22,7 @@ import (
 	"runtime/pprof"
 	"sort"
 	"strings"
+    "math"
 
 	"kingsford/arithc"
 	"kingsford/bitio"
@@ -77,6 +68,11 @@ var (
 	flipped       int
 )
 
+var (
+	flipReadsOption bool = true
+    dupsOption      bool = true
+)
+
 const (
 	pseudoCount       uint64 = 1
 	observationWeight uint64 = 10
@@ -84,7 +80,6 @@ const (
 	observationInc    uint32 = 2 // once above seenThreshold, increment by this on each observation
 
 	smoothOption    bool = false
-	flipReadsOption bool = true
 
 	cpuProfile string = "" //"encode.pprof" // set to nonempty to write profile to this file
 )
@@ -179,6 +174,11 @@ func reverseComplement(r string) string {
 		s[len(r)-i-1] = RC(r[i])
 	}
 	return string(s)
+}
+
+func AbsInt(x int) int {
+    if x < 0 { return -x }
+    return x
 }
 
 //===================================================================
@@ -382,15 +382,24 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []st
 // of the bucket sizes and returns them.
 func listBuckets(reads []string) ([]string, []int) {
 	curBucket := ""
+    firstRead := ""
+    allSame := false
 	buckets := make([]string, 0)
 	counts := make([]int, 0)
 
 	for _, r := range reads {
 		if r[:globalK] != curBucket {
 			curBucket = r[:globalK]
+            firstRead = r
+            // if all the reads in a bucket are the same, record this
+            // by negating the bucket count
+            if dupsOption && allSame && counts[len(counts)-1] > 1 {
+                counts[len(counts)-1] = -counts[len(counts)-1]
+            }
 			buckets = append(buckets, curBucket)
 			counts = append(counts, 1)
 		} else {
+            allSame = (r == firstRead)
 			counts[len(counts)-1]++
 		}
 	}
@@ -425,9 +434,12 @@ func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) 
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
 // and their counts, and then encodes each read.
-func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arithc.Encoder) int {
+func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arithc.Encoder) (n int) {
 	// read the reads and flip as needed
 	reads := readAndFlipReads(readFile, hash, flipReadsOption)
+
+    log.Printf("Estimated 2-bit encoding size: %d", 
+        uint64(math.Ceil(math.Log2(float64(len(reads)*len(reads[0]))))))
 
 	// create the buckets and counts
 	buckets, counts := listBuckets(reads)
@@ -474,8 +486,21 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	log.Printf("Encoding reads, each of length %d ...", len(reads[0]))
 	waitForReads := make(chan bool)
 	go func() {
-		for _, r := range reads {
-			encodeSingleReadWithBucket(r, hash, coder)
+        curRead := 0
+        for _, c := range counts {
+            if c > 0 {
+                // write out the given number of reads
+                for j := 0; j < c; j++ {
+                    encodeSingleReadWithBucket(reads[curRead], hash, coder)
+                    curRead++
+                    n++
+                }
+            } else {
+                // all the reads in this bucket are the same, so just write one and skip past the rest.
+                encodeSingleReadWithBucket(reads[curRead], hash, coder)
+                curRead += AbsInt(c)
+                n++
+            }
 		}
 		close(waitForReads)
 	}()
@@ -485,7 +510,7 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	<-waitForCounts
 	<-waitForReads
 	log.Printf("done.")
-	return len(reads)
+	return
 }
 
 //===============================================================================
@@ -569,6 +594,31 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 	}
 }
 
+func decodeSingleRead(contextMer Kmer, hash KmerHash, tailLen int, decoder *arithc.Decoder, out []byte) {
+
+    // function called by Decode
+	lu := func(t uint64) (uint64, uint64, uint64) {
+		return lookup(hash, contextMer, t)
+	}
+
+    for i := 0; i < tailLen; i++ {
+        // decode next symbol
+        symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
+        DIE_ON_ERR(err, "Fatal error decoding!")
+        b := byte(symb)
+
+        // write it out
+        out[i] = baseFromBits(b)
+
+        // update hash counts (throws away the computed interval; just
+        // called for side effects.)
+        nextInterval(hash, contextMer, b)
+
+        // update the new context
+        contextMer = shiftKmer(contextMer, b)
+    }
+}
+
 // decodeReads() decodes the file wrapped by the given Decoder, using the
 // kmers, counts, and hash table provided. It writes its output to the given
 // io.Writer.
@@ -577,48 +627,35 @@ func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out i
 
 	buf := bufio.NewWriter(out)
 
-	var contextMer Kmer
-	lu := func(t uint64) (uint64, uint64, uint64) {
-		return lookup(hash, contextMer, t)
-	}
+    // tailBuf is a buffer for read tails returned by decodeSingleRead
+    tailLen := readLen-len(kmers[0])
+    tailBuf := make([]byte, tailLen)
 
 	n := 0
-	curBucket := 0
-	bucketCount := 0
-	for curBucket < len(kmers) {
-		// write the bucket
-		buf.Write([]byte(kmers[curBucket]))
+    // for every bucket
+    for curBucket, c := range counts {
+        contextMer := stringToKmer(kmers[curBucket])
 
-		contextMer = stringToKmer(kmers[curBucket])
-		// write the reads
-		for i := 0; i < readLen-len(kmers[0]); i++ {
-			// decode next symbol
-			symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
-			DIE_ON_ERR(err, "Fatal error decoding!")
-			b := byte(symb)
-
-			// write it out
-			buf.WriteByte(baseFromBits(b))
-
-			// update hash counts (throws away the computed interval; just
-			// called for side effects.)
-			nextInterval(hash, contextMer, b)
-
-			// update the new context
-			contextMer = shiftKmer(contextMer, b)
-		}
-
-		// at the end of the read; write a newline and increment the # of reads
-		// from this bucket that we've written
-		buf.WriteByte('\n')
-		bucketCount++
-		n++
-
-		if bucketCount == counts[curBucket] {
-			curBucket++
-			bucketCount = 0
-		}
-	}
+        // if bucket is a uniform bucket, write out |c| copies of the decoded string
+        if c < 0 {
+            decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
+            for j := 0; j < AbsInt(c); j++ {
+                buf.Write([]byte(kmers[curBucket]))
+                buf.Write(tailBuf)
+                buf.WriteByte('\n')
+                n++
+            }
+        } else {
+            // otherwise, decode a read for each string in the bucket
+            for j := 0; j < c; j++ {
+		        buf.Write([]byte(kmers[curBucket]))
+                decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
+                buf.Write(tailBuf)
+                buf.WriteByte('\n')
+                n++
+            }
+        }
+    }
 	buf.Flush()
 	log.Printf("done. Wrote %v reads.", n)
 }
@@ -644,6 +681,8 @@ func init() {
 	encodeFlags.StringVar(&outFile, "out", "", "output filename")
 	encodeFlags.StringVar(&readFile, "reads", "", "reads filename")
 	encodeFlags.IntVar(&globalK, "k", 16, "length of k")
+    encodeFlags.BoolVar(&flipReadsOption, "flip", true, "if true, reverse complement reads as needed") 
+    encodeFlags.BoolVar(&dupsOption, "dups", true, "if true, record dups specially")
 }
 
 // writeGlobalOptions() writes out the global variables that can affect the
@@ -801,76 +840,3 @@ func main() {
 		defaultUsed, contextExists)
 }
 
-/*
-// require seeing an item twice before counting it
-x transcript sequences are assigned 2
-* when we use a character in a context, increment by 1
-x w = observationWeight * min64(uint64(dist[i]-1), 1)
-x Smooth anytime count < 2
-*/
-
-/*
-1. When encoding a read, check a few kmers randomly and
-choose the strand that matches the most (done)
-
-2. If you encounter a kmer you haven't seen in this context,
-    record that you saw it
-    output the maximum probability kmer
-    If you see it a second time, change prob to match reference prob
-
-3. When encoding the first k letters, we use a special prob distribution
-(done)
-
-4. update special prob distribution (done)
-
-10  smoothed    13479801
-12  smoothed    12106330
-14  smoothed    6952281
-
-head file:
-14  smoothed  6702274
-14  smoothed no pseudo   6688925
-14  smoothed no pseudo, update-in-xcript, 4741447
-14  no-smooth, pseudo=0, update-in-xscript, 5814616
-    if context exists & interval is non-zero, we use it and increment the use
-        we increment by 1, and devide the total counts by 2 so that we have to see a new
-        transition twice before it gets a non-zero prob
-    if context doesn't exist, or the interval is zero, we use default and increment it
-14  no-smooth, pseudo=0, update by 1 until seen twice, then by 2 (transcriptomic transitiosn start at 2)
-    size = 5783643
-
-20  same as above, size = 6135591
-18  same as above, size = 5667019
-17  same as above, size = 5453441
-16  same as above, size = 5295103
-15  same as above, size = 5453441
-14  same as above, size = 5783643
-
-next idea: introduce new contexts when we need to:
-    if context is not in hash table
-    use default encoding
-    then add context with 0-weight distribution and increment the item for the next guy
-
-16  no-smoot, pseudo=0, update by 1 until seen twice, then by 2 (transcroptomic transistiosn start at 2)
-        new contexts are added as above
-    size = 5123801
-
-16  all same as previous, but now with smoothing, size = 4511492
-
-16  all same as previous, but with smoothing, size = 4511492 and bziped2 ascii smoothed file = 1972894
-    total size = 6484386
-
-16  same as previous, with smoothing, bzipped binary smoothed file; size = 6458275 = 4511492 + 1946783
-
-16  same as prev, no smoothing, except increment default counters whenever used; size = 5124373
-
-16  same as prev, no smooth, increment counters, use default weights direct with defaultWeight size = 5124373
-
-16  same as prev, no smoot, added "start of read interval"; size = 5124413
-
-next step:
-    to really test benefit of smoothing, you have to record, in a separate file:
-        delta since last smooth
-        2 bit encoding of new character
-        (or just delta since last A smooth, T smooth, C smooth, G smooth)
-*/

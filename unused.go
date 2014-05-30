@@ -1,3 +1,29 @@
+/*
+x0. change pseudocount to be max (or else change the seen threshold)
+x1. fix filename handling (including outputting filename information as a log)
+x why isn't TTTT...TTT flipped? b/c it's tied
+x2. compress counts and bittree directly from here (and uncompress bittree when reading it)
+x3. move unused code over to unused.no file
+x4. update error messages and panic messages to be more consistent
+    // DIE_ON_ERROR(err, "Couldn't create bucket file: %v", err)
+x4.1 write out all the global options when encoding / decoding
+x5.2. add comments
+x6. profile to speed up
+x7. parallelize
+x5.0. read / write READLEN someplace
+x10. Handle duplicate reads
+    bucket lengths can be negative, which means every read in this bucket is the
+    same so we only encoded 1, which should be duplicated many times.
+xrunning now 5.1. test out on 3 more files
+x12. Add commandline option to turn off flipping
+- Figure X1: Comparison with SCALCE, QUIP, GZIP, and 2-bit encoding
+- Figure X2: Contribution of bucket sizes, counts, and tails to final file size
+- Figure X3: Effect of Reference, Flipping, Duplicate Handling.
+- Figure X4: Effect of k on final compression size.
+
+x3. Write out two-bit length as a log message
+
+*/
 package main
 
 import (
@@ -167,3 +193,115 @@ func countMatchingContexts(hash KmerHash, r string) (n int) {
 	}
 	return
 }
+/*
+	for curBucket < len(kmers) {
+		// write the bucket
+		buf.Write([]byte(kmers[curBucket]))
+
+		contextMer = stringToKmer(kmers[curBucket])
+
+		// write the reads
+		for i := 0; i < readLen-len(kmers[0]); i++ {
+			// decode next symbol
+			symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
+			DIE_ON_ERR(err, "Fatal error decoding!")
+			b := byte(symb)
+
+			// write it out
+			buf.WriteByte(baseFromBits(b))
+
+			// update hash counts (throws away the computed interval; just
+			// called for side effects.)
+			nextInterval(hash, contextMer, b)
+
+			// update the new context
+			contextMer = shiftKmer(contextMer, b)
+		}
+
+		// at the end of the read; write a newline and increment the # of reads
+		// from this bucket that we've written
+		buf.WriteByte('\n')
+		bucketCount++
+		n++
+
+		if bucketCount == counts[curBucket] {
+			curBucket++
+			bucketCount = 0
+		}
+	}
+    */
+
+
+/*
+// require seeing an item twice before counting it
+x transcript sequences are assigned 2
+* when we use a character in a context, increment by 1
+x w = observationWeight * min64(uint64(dist[i]-1), 1)
+x Smooth anytime count < 2
+*/
+
+/*
+1. When encoding a read, check a few kmers randomly and
+choose the strand that matches the most (done)
+
+2. If you encounter a kmer you haven't seen in this context,
+    record that you saw it
+    output the maximum probability kmer
+    If you see it a second time, change prob to match reference prob
+
+3. When encoding the first k letters, we use a special prob distribution
+(done)
+
+4. update special prob distribution (done)
+
+10  smoothed    13479801
+12  smoothed    12106330
+14  smoothed    6952281
+
+head file:
+14  smoothed  6702274
+14  smoothed no pseudo   6688925
+14  smoothed no pseudo, update-in-xcript, 4741447
+14  no-smooth, pseudo=0, update-in-xscript, 5814616
+    if context exists & interval is non-zero, we use it and increment the use
+        we increment by 1, and devide the total counts by 2 so that we have to see a new
+        transition twice before it gets a non-zero prob
+    if context doesn't exist, or the interval is zero, we use default and increment it
+14  no-smooth, pseudo=0, update by 1 until seen twice, then by 2 (transcriptomic transitiosn start at 2)
+    size = 5783643
+
+20  same as above, size = 6135591
+18  same as above, size = 5667019
+17  same as above, size = 5453441
+16  same as above, size = 5295103
+15  same as above, size = 5453441
+14  same as above, size = 5783643
+
+next idea: introduce new contexts when we need to:
+    if context is not in hash table
+    use default encoding
+    then add context with 0-weight distribution and increment the item for the next guy
+
+16  no-smoot, pseudo=0, update by 1 until seen twice, then by 2 (transcroptomic transistiosn start at 2)
+        new contexts are added as above
+    size = 5123801
+
+16  all same as previous, but now with smoothing, size = 4511492
+
+16  all same as previous, but with smoothing, size = 4511492 and bziped2 ascii smoothed file = 1972894
+    total size = 6484386
+
+16  same as previous, with smoothing, bzipped binary smoothed file; size = 6458275 = 4511492 + 1946783
+
+16  same as prev, no smoothing, except increment default counters whenever used; size = 5124373
+
+16  same as prev, no smooth, increment counters, use default weights direct with defaultWeight size = 5124373
+
+16  same as prev, no smoot, added "start of read interval"; size = 5124413
+
+next step:
+    to really test benefit of smoothing, you have to record, in a separate file:
+        delta since last smooth
+        2 bit encoding of new character
+        (or just delta since last A smooth, T smooth, C smooth, G smooth)
+*/
