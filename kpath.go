@@ -285,7 +285,12 @@ func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
 // intervalFor() returns the interval for the given character (represented as a
 // 2-bit encoded base) according to the given distribution (transformed by the
 // given weight transformation function).
-func intervalFor(letter byte, dist [len(ALPHA)]uint32, weightOf WeightXformFcn) (a uint64, b uint64, total uint64) {
+func intervalFor(
+        letter byte, 
+        dist [len(ALPHA)]uint32, 
+        weightOf WeightXformFcn,
+) (a uint64, b uint64, total uint64) {
+
 	letterIdx := int(letter)
 	for i := 0; i < len(dist); i++ {
 		w := weightOf(i, dist)
@@ -459,7 +464,7 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	defer writer.Close()
 
 	/*** The main work to encode the bucket names ***/
-	waitForBuckets := make(chan bool)
+	waitForBuckets := make(chan struct{})
 	go func() {
 		encodeKmersToFile(buckets, writer)
 		close(waitForBuckets)
@@ -476,7 +481,7 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 	defer countZ.Close()
 
 	/*** The main work to encode the bucket counts ***/
-	waitForCounts := make(chan bool)
+	waitForCounts := make(chan struct{})
 	go func() {
 		writeCounts(countZ, len(reads[0]), counts)
 		close(waitForCounts)
@@ -484,7 +489,7 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
 
 	/*** The main work to encode the read tails ***/
 	log.Printf("Encoding reads, each of length %d ...", len(reads[0]))
-	waitForReads := make(chan bool)
+	waitForReads := make(chan struct{})
 	go func() {
         curRead := 0
         for _, c := range counts {
@@ -622,7 +627,14 @@ func decodeSingleRead(contextMer Kmer, hash KmerHash, tailLen int, decoder *arit
 // decodeReads() decodes the file wrapped by the given Decoder, using the
 // kmers, counts, and hash table provided. It writes its output to the given
 // io.Writer.
-func decodeReads(kmers []string, counts []int, hash KmerHash, readLen int, out io.Writer, decoder *arithc.Decoder) {
+func decodeReads(
+    kmers []string, 
+    counts []int, 
+    hash KmerHash, 
+    readLen int, 
+    out io.Writer, 
+    decoder *arithc.Decoder,
+) {
 	log.Printf("Decoding reads...")
 
 	buf := bufio.NewWriter(out)
@@ -739,7 +751,7 @@ func main() {
 
 	// count the kmers in the reference
 	var hash KmerHash
-	waitForReference := make(chan bool)
+	waitForReference := make(chan struct{})
 	go func() {
 		hash = countKmersInReference(globalK, refFile)
 		log.Printf("There are %v unique %v-mers in the reference\n",
@@ -795,7 +807,7 @@ func main() {
 
 		// read the bucket names
 		var kmers []string
-		waitForBuckets := make(chan bool)
+		waitForBuckets := make(chan struct{})
 		go func() {
 			kmers = decodeKmersFromFile(headsFN, globalK)
 			sort.Strings(kmers)
@@ -805,7 +817,7 @@ func main() {
 		// read the bucket counts
 		var counts []int
 		var readlen int
-		waitForCounts := make(chan bool)
+		waitForCounts := make(chan struct{})
 		go func() {
 			counts, readlen = readBucketCounts(countsFN)
 			close(waitForCounts)
