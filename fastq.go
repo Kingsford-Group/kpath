@@ -81,9 +81,9 @@ func ReadFastQ(filename string, out chan<- *FastQ) {
     const (BETWEEN int = iota; INSEQ; INQUALS)
     state := BETWEEN
 
-    var record *FastQ
     seq := make([]byte, 0)
     quals := make([]byte, 0)
+    var emptyQuals = make([]byte, 0)
 
     scanner := bufio.NewScanner(in)
     for scanner.Scan() {
@@ -110,9 +110,11 @@ func ReadFastQ(filename string, out chan<- *FastQ) {
 
             if len(quals) >= len(seq) {
                 state = BETWEEN
-                record = NewFastQ(seq, quals)
-                out <- record
-                record = nil
+                if writeQualOption {
+                    out <- NewFastQ(seq, quals)
+                } else {
+                    out <- NewFastQ(seq, emptyQuals)
+                }
             }
         }
     }

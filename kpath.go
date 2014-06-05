@@ -74,6 +74,8 @@ var (
     dupsOption         bool = true
     writeNsOption      bool = true
     writeFlippedOption bool = true
+
+    writeQualOption    bool = false // NYI completely
 )
 
 const (
@@ -496,7 +498,7 @@ func encodeWithBuckets(
     readLength := len(reads[0].Seq)
 
     log.Printf("Estimated 2-bit encoding size: %d", 
-        uint64(math.Ceil(math.Log2(float64(len(reads)*readLength)))))
+        uint64(math.Ceil(float64(2*len(reads)*readLength) / 8.0)))
 
     // if the user wants the qualities written out 
     waitForFlipped := make(chan struct{})
