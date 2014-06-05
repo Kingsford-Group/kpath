@@ -5,6 +5,10 @@ package main
 1. Paired ends:
     - bucket1 bucket2 XXX YYY
 2. Handle "N"s by writing their locations to a separate file
+3. read fastq files instead of .seq files
+4. write out 1 bit per read for reverse complement
+
+(you need a struct with seq, qual, rc, Ns)
 
 4. conserve memory with a DNAString type (?)
 5. add some more unit tests
@@ -143,8 +147,8 @@ func setShiftKmerMask() {
 	}
 }
 
-// shiftKmer() creates a new kmer by shifting the given one over one base to the left
-// and adding the given next character at the right.
+// shiftKmer() creates a new kmer by shifting the given one over one base to
+// the left and adding the given next character at the right.
 func shiftKmer(kmer Kmer, next byte) Kmer {
 	return ((kmer << 2) | Kmer(next)) & shiftKmerMask
 }
@@ -308,7 +312,11 @@ func intervalFor(
 
 // nextInterval() computes the interval for the given context and updates the
 // default distribution and context distributions as required.
-func nextInterval(hash KmerHash, contextMer Kmer, kidx byte) (a uint64, b uint64, total uint64) {
+func nextInterval(
+    hash KmerHash, 
+    contextMer Kmer, 
+    kidx byte,
+) (a uint64, b uint64, total uint64) {
 	info, ok := hash[contextMer]
 	// if the context exists, use that distribution
 	if ok {
@@ -439,7 +447,12 @@ func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) 
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
 // and their counts, and then encodes each read.
-func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arithc.Encoder) (n int) {
+func encodeWithBuckets(
+    readFile, 
+    outBaseName string, 
+    hash KmerHash, 
+    coder *arithc.Encoder,
+) (n int) {
 	// read the reads and flip as needed
 	reads := readAndFlipReads(readFile, hash, flipReadsOption)
 
@@ -501,7 +514,8 @@ func encodeWithBuckets(readFile, outBaseName string, hash KmerHash, coder *arith
                     n++
                 }
             } else {
-                // all the reads in this bucket are the same, so just write one and skip past the rest.
+                // all the reads in this bucket are the same, so just write one
+                // and skip past the rest.
                 encodeSingleReadWithBucket(reads[curRead], hash, coder)
                 curRead += AbsInt(c)
                 n++
@@ -558,7 +572,11 @@ func readBucketCounts(countsFN string) ([]int, int) {
 // dart() finds the interval in the given distribution that contains the given
 // target, after transformming the distribution using the given weightOf
 // function. This is called by lookup() during decode.
-func dart(dist [len(ALPHA)]uint32, target uint32, weightOf WeightXformFcn) (uint64, uint64, uint64) {
+func dart(
+    dist [len(ALPHA)]uint32, 
+    target uint32, 
+    weightOf WeightXformFcn,
+) (uint64, uint64, uint64) {
 	sum := uint32(0)
 	for i := range dist {
 		w := uint32(weightOf(i, dist))
@@ -570,7 +588,8 @@ func dart(dist [len(ALPHA)]uint32, target uint32, weightOf WeightXformFcn) (uint
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
 }
 
-// lookup() is called by arithc.Decoder to find an interval that contains the given value t.
+// lookup() is called by arithc.Decoder to find an interval that contains the
+// given value t.
 func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
 	if info, ok := hash[context]; ok {
 		return dart(info.next, uint32(t), contextWeight)
@@ -599,8 +618,13 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 	}
 }
 
-func decodeSingleRead(contextMer Kmer, hash KmerHash, tailLen int, decoder *arithc.Decoder, out []byte) {
-
+func decodeSingleRead(
+    contextMer Kmer, 
+    hash KmerHash, 
+    tailLen int, 
+    decoder *arithc.Decoder, 
+    out []byte,
+) {
     // function called by Decode
 	lu := func(t uint64) (uint64, uint64, uint64) {
 		return lookup(hash, contextMer, t)
@@ -648,7 +672,8 @@ func decodeReads(
     for curBucket, c := range counts {
         contextMer := stringToKmer(kmers[curBucket])
 
-        // if bucket is a uniform bucket, write out |c| copies of the decoded string
+        // if bucket is a uniform bucket, write out |c| copies of the decoded
+        // string
         if c < 0 {
             decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
             for j := 0; j < AbsInt(c); j++ {
@@ -766,7 +791,8 @@ func main() {
 		/* encode -k -ref -reads=FOO.seq -out=OUT
 		   will encode into OUT.{enc,bittree,counts} */
 		log.Printf("Reading from %s", readFile)
-		log.Printf("Writing to %s, %s, %s", outFile+".enc", outFile+".bittree", outFile+".counts")
+		log.Printf("Writing to %s, %s, %s", 
+            outFile+".enc", outFile+".bittree", outFile+".counts")
 
 		var err error
 
