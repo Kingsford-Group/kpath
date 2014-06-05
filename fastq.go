@@ -12,6 +12,60 @@ type FastQ struct {
     Seq []byte
     Quals []byte
     NLocations []byte
+    IsFlipped bool
+}
+
+// NewFastQ creates a new, empty fastq record
+func NewFastQ(seq []byte, quals []byte) *FastQ {
+    f := FastQ{ 
+       Seq: make([]byte, len(seq)),
+       Quals: make([]byte, len(quals)),
+       NLocations: make([]byte, 0),
+       IsFlipped: false,
+    }
+    copy(f.Seq, seq)
+    copy(f.Quals, quals)
+    f.RemoveNs()
+    return &f
+}
+
+// RemoveNs replaces any 'N's in the sequence with 'A' and records the position
+// of the Ns in NLocations.
+func (q *FastQ) RemoveNs() {
+    for i, c := range q.Seq {
+        if c == 'N' {
+            q.Seq[i] = 'A'
+            q.NLocations = append(q.NLocations, byte(i))
+        }
+    }
+}
+
+// ReverseComplement() will reverse complement a FastQ record, including
+// reversing its quality values and updating it's Nlocations.
+func (q *FastQ) ReverseComplement() {
+    // reverse complement the sequence
+    q.Seq = []byte(reverseComplement(string(q.Seq)))
+
+    // reverse the quality array
+    for i, j := 0, len(q.Quals)-1; i < j; i, j = i+1, j-1 {
+        q.Quals[i], q.Quals[j] = q.Quals[j], q.Quals[i]
+    }
+    
+    // reverse complement the locations
+    for i, v := range q.NLocations {
+        q.NLocations[i] = byte(len(q.Seq)) - v - 1
+    }
+
+    // record that we flipped
+    q.IsFlipped = true
+}
+
+
+// PrintFastQ prints out the fastq record (used only for debugging).
+func PrintFastQ(q *FastQ) {
+    fmt.Println(string(q.Seq))
+    fmt.Println(string(q.Quals))
+    fmt.Printf("%v\n", q.NLocations)
 }
 
 
@@ -66,40 +120,3 @@ func ReadFastQ(filename string, out chan<- *FastQ) {
     close(out)
 }
 
-
-// NewFastQ creates a new, empty fastq record
-func NewFastQ(seq []byte, quals []byte) *FastQ {
-    f := FastQ{ 
-       Seq: make([]byte, len(seq)),
-       Quals: make([]byte, len(quals)),
-       NLocations: make([]byte, 0),
-    }
-    copy(f.Seq, seq)
-    copy(f.Quals, quals)
-    f.RemoveNs()
-    return &f
-}
-
-// RemoveNs replaces any 'N's in the sequence with 'A' and records the position
-// of the Ns in NLocations.
-func (q *FastQ) RemoveNs() {
-    for i, c := range q.Seq {
-        if c == 'N' {
-            q.Seq[i] = 'A'
-            q.NLocations = append(q.NLocations, byte(i))
-        }
-    }
-}
-
-func PrintFastQ(q *FastQ) {
-    fmt.Println(string(q.Seq))
-    fmt.Println(string(q.Quals))
-    fmt.Printf("%v\n", q.NLocations)
-}
-
-
-/*
-func (q *FastQ) ReverseComplement() {
-
-}
-*/

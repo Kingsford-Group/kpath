@@ -3,7 +3,7 @@
 import sys
 
 def RC(x):
-    rcmap = {'A':'T', 'T':'A', 'G':'C', 'C':'G'}
+    rcmap = {'A':'T', 'T':'A', 'G':'C', 'C':'G', 'N':'N'}
     A = []
     for x in reversed(x):
         A.append(rcmap[x])

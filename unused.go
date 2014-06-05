@@ -32,6 +32,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+    "sort"
 
 	"kingsford/arithc"
 )
@@ -193,6 +194,45 @@ func countMatchingContexts(hash KmerHash, r string) (n int) {
 	}
 	return
 }
+
+// readAndFlipReads() reads the reads and reverse complements them if the
+// reverse complement matches the hash better (according to a countMatching*
+// function above). It returns a slide of the reads. "N"s are treated as "A"s.
+// No other characters are transformed and will eventually lead to a panic.
+func readAndFlipReadsOld(readFile string, hash KmerHash, flipReadsOption bool) []string {
+	// open the read file
+	log.Println("Reading and flipping reads...")
+	in, err := os.Open(readFile)
+	DIE_ON_ERR(err, "Couldn't open read file %s", readFile)
+	defer in.Close()
+
+	// put the reads into a global array, flipped if needed
+	reads := make([]string, 0, 1000000)
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		// remove spaces and convert on-ACGT to 'A'
+		r := strings.Replace(strings.TrimSpace(strings.ToUpper(scanner.Text())), "N", "A", -1)
+		if flipReadsOption {
+			n1 := countMatchingObservations(hash, r)
+			rcr := reverseComplement(r)
+			n2 := countMatchingObservations(hash, rcr)
+			// if they are tied, take the lexigographically smaller one
+			if n2 > n1 || (n2 == n1 && rcr < r) {
+				r = rcr
+				flipped++
+			}
+		}
+		reads = append(reads, r)
+	}
+	DIE_ON_ERR(scanner.Err(), "Couldn't read reads file to completion")
+
+	// sort the strings and return
+	sort.Strings(reads)
+	log.Printf("Read %v reads; flipped %v of them.\n", len(reads), flipped)
+	return reads
+}
+
+
 /*
 	for curBucket < len(kmers) {
 		// write the bucket

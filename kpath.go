@@ -4,11 +4,6 @@ package main
 
 1. Paired ends:
     - bucket1 bucket2 XXX YYY
-2. Handle "N"s by writing their locations to a separate file
-3. read fastq files instead of .seq files
-4. write out 1 bit per read for reverse complement
-
-(you need a struct with seq, qual, rc, Ns)
 
 4. conserve memory with a DNAString type (?)
 5. add some more unit tests
@@ -26,6 +21,8 @@ import (
 	"runtime/pprof"
 	"sort"
 	"strings"
+    "strconv"
+    "time"
     "math"
 
 	"kingsford/arithc"
@@ -73,8 +70,10 @@ var (
 )
 
 var (
-	flipReadsOption bool = true
-    dupsOption      bool = true
+	flipReadsOption    bool = true
+    dupsOption         bool = true
+    writeNsOption      bool = true
+    writeFlippedOption bool = true
 )
 
 const (
@@ -160,7 +159,7 @@ func RC(c byte) byte {
 	case 'A':
 		return 'T'
 	case 'N':
-		return 'T'
+		return 'N'
 	case 'C':
 		return 'G'
 	case 'G':
@@ -354,53 +353,58 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 	return
 }
 
+// support sorting the fastq list lexicographically
+type Lexicographically []*FastQ
+func (a Lexicographically) Len() int { return len(a) }
+func (a Lexicographically) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a Lexicographically) Less(i, j int) bool { return string(a[i].Seq) < string(a[j].Seq) }
+
+
 // readAndFlipReads() reads the reads and reverse complements them if the
 // reverse complement matches the hash better (according to a countMatching*
 // function above). It returns a slide of the reads. "N"s are treated as "A"s.
 // No other characters are transformed and will eventually lead to a panic.
-func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []string {
-	// open the read file
-	log.Println("Reading and flipping reads...")
-	in, err := os.Open(readFile)
-	DIE_ON_ERR(err, "Couldn't open read file %s", readFile)
-	defer in.Close()
+func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*FastQ {
+    // start the reading routine
+    fq := make(chan *FastQ)
+    go ReadFastQ(readFile, fq)
 
-	// put the reads into a global array, flipped if needed
-	reads := make([]string, 0, 1000000)
-	scanner := bufio.NewScanner(in)
-	for scanner.Scan() {
-		// remove spaces and convert on-ACGT to 'A'
-		r := strings.Replace(strings.TrimSpace(strings.ToUpper(scanner.Text())), "N", "A", -1)
-		if flipReadsOption {
-			n1 := countMatchingObservations(hash, r)
-			rcr := reverseComplement(r)
+    reads := make([]*FastQ, 0, 10000000)
+
+    // for every record
+    for rec := range fq {
+        // possibly flip it
+        if flipReadsOption {
+			n1 := countMatchingObservations(hash, string(rec.Seq))
+			rcr := reverseComplement(string(rec.Seq))
 			n2 := countMatchingObservations(hash, rcr)
 			// if they are tied, take the lexigographically smaller one
-			if n2 > n1 || (n2 == n1 && rcr < r) {
-				r = rcr
+			if n2 > n1 || (n2 == n1 && string(rcr) < string(rec.Seq)) {
+				rec.ReverseComplement()
 				flipped++
 			}
-		}
-		reads = append(reads, r)
-	}
-	DIE_ON_ERR(scanner.Err(), "Couldn't read reads file to completion")
+        }
+        // save it in our read list
+        reads = append(reads, rec)
+    }
 
-	// sort the strings and return
-	sort.Strings(reads)
+    // sort the records by sequence
+    sort.Sort(Lexicographically(reads))
 	log.Printf("Read %v reads; flipped %v of them.\n", len(reads), flipped)
-	return reads
+    return reads
 }
 
 // listBuckets() processes the reads and creates the bucket list and the list
 // of the bucket sizes and returns them.
-func listBuckets(reads []string) ([]string, []int) {
+func listBuckets(reads []*FastQ) ([]string, []int) {
 	curBucket := ""
     firstRead := ""
     allSame := false
 	buckets := make([]string, 0)
 	counts := make([]int, 0)
 
-	for _, r := range reads {
+	for _, rec := range reads {
+        r := string(rec.Seq)
 		if r[:globalK] != curBucket {
 			curBucket = r[:globalK]
             firstRead = r
@@ -429,6 +433,38 @@ func writeCounts(f io.Writer, readlen int, counts []int) {
 	log.Printf("Done; write %d counts.", len(counts))
 }
 
+
+// writeNLocations() writes out the locations of the translated Ns in the file.
+func writeNLocations(f io.Writer, reads []*FastQ) {
+    log.Printf("Writing location of Ns...")
+    // every read's locations are written as a space separated list of ascii
+    // integers
+    c := 0
+    for _, fq := range reads {
+        for i, p := range fq.NLocations {
+            fmt.Fprintf(f, "%d", p)
+            if i != len(fq.NLocations)-1 {
+                fmt.Fprintf(f, " ")
+                c++
+            }
+        }
+        fmt.Fprintf(f, "\n")
+    }
+    log.Printf("Done; wrote %d Ns.", c)
+}
+
+// writeFlipped() writes out a stream of bits that says whether or not the
+// reads were flipped.
+func writeFlipped(out *bitio.Writer, reads []*FastQ) {
+    for _, fq := range reads {
+        if fq.IsFlipped {
+            out.WriteBit(1)
+        } else {
+            out.WriteBit(0)
+        }
+    }
+}
+
 // encodeSingleReadWithBucket() encodes a single read: uses a bucketing scheme
 // for initial part, and arithmetic encoding for the rest.
 func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) {
@@ -445,6 +481,7 @@ func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) 
 	}
 }
 
+
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
 // and their counts, and then encodes each read.
 func encodeWithBuckets(
@@ -456,9 +493,52 @@ func encodeWithBuckets(
 	// read the reads and flip as needed
 	reads := readAndFlipReads(readFile, hash, flipReadsOption)
 
-    log.Printf("Estimated 2-bit encoding size: %d", 
-        uint64(math.Ceil(math.Log2(float64(len(reads)*len(reads[0]))))))
+    readLength := len(reads[0].Seq)
 
+    log.Printf("Estimated 2-bit encoding size: %d", 
+        uint64(math.Ceil(math.Log2(float64(len(reads)*readLength)))))
+
+    // if the user wants the qualities written out 
+    waitForFlipped := make(chan struct{})
+    if writeFlippedOption {
+        outFlipped, err := os.Create(outBaseName + ".flipped")
+        DIE_ON_ERR(err, "Couldn't create flipped file: %s", outBaseName + ".flipped")
+        defer outFlipped.Close()
+
+        outFlippedZ, err := gzip.NewWriterLevel(outFlipped, gzip.BestCompression)
+        DIE_ON_ERR(err, "Couldn't create gzipper for flipped file.")
+        defer outFlippedZ.Close()
+
+        flippedBits := bitio.NewWriter(outFlippedZ)
+        defer flippedBits.Close()
+
+        go func() {
+            writeFlipped(flippedBits, reads)
+            close(waitForFlipped)
+        }()
+    } else {
+        close(waitForFlipped)
+    }
+
+    // if the user wants to write out the N positions, write them out
+    waitForNs := make(chan struct{})
+    if writeNsOption {
+        outNs, err := os.Create(outBaseName + ".ns")
+        DIE_ON_ERR(err, "Couldn't create N location file: %s", outBaseName + ".ns")
+        defer outNs.Close()
+
+        outNsZ, err := gzip.NewWriterLevel(outNs, gzip.BestCompression)
+        DIE_ON_ERR(err, "Couldn't create gzipper for N location file.")
+        defer outNsZ.Close()
+
+        go func() {
+            writeNLocations(outNsZ, reads)
+            close(waitForNs)
+        }()
+    } else {
+        close(waitForNs)
+    }
+     
 	// create the buckets and counts
 	buckets, counts := listBuckets(reads)
 
@@ -496,12 +576,13 @@ func encodeWithBuckets(
 	/*** The main work to encode the bucket counts ***/
 	waitForCounts := make(chan struct{})
 	go func() {
-		writeCounts(countZ, len(reads[0]), counts)
+		writeCounts(countZ, readLength, counts)
 		close(waitForCounts)
 	}()
 
+
 	/*** The main work to encode the read tails ***/
-	log.Printf("Encoding reads, each of length %d ...", len(reads[0]))
+	log.Printf("Encoding reads, each of length %d ...", readLength)
 	waitForReads := make(chan struct{})
 	go func() {
         curRead := 0
@@ -509,14 +590,14 @@ func encodeWithBuckets(
             if c > 0 {
                 // write out the given number of reads
                 for j := 0; j < c; j++ {
-                    encodeSingleReadWithBucket(reads[curRead], hash, coder)
+                    encodeSingleReadWithBucket(string(reads[curRead].Seq), hash, coder)
                     curRead++
                     n++
                 }
             } else {
                 // all the reads in this bucket are the same, so just write one
                 // and skip past the rest.
-                encodeSingleReadWithBucket(reads[curRead], hash, coder)
+                encodeSingleReadWithBucket(string(reads[curRead].Seq), hash, coder)
                 curRead += AbsInt(c)
                 n++
             }
@@ -527,6 +608,8 @@ func encodeWithBuckets(
 	// Wait for each of the coders to finish
 	<-waitForBuckets
 	<-waitForCounts
+    <-waitForNs
+    <-waitForFlipped
 	<-waitForReads
 	log.Printf("done.")
 	return
@@ -567,6 +650,88 @@ func readBucketCounts(countsFN string) ([]int, int) {
 	}
 	log.Printf("done; read %d counts", len(counts))
 	return counts, readlen
+}
+
+// readFlipped() reads the compressed bitstream that indicates whether a read
+// was flipped or not. If the file does not exist, returns nil.
+func readFlipped(flippedFN string) []bool {
+    // open the file; return empty if nothing there
+    flippedIn, err := os.Open("test.flipped")
+    if err == nil {
+        log.Printf("Reading flipped bits from %s", flippedFN)
+        defer flippedIn.Close()
+
+        flippedZ, err := gzip.NewReader(flippedIn)
+        DIE_ON_ERR(err, "Couldn't create unzipper for flipped file")
+        defer flippedZ.Close()
+
+        flippedBits := bitio.NewReader(bufio.NewReader(flippedZ))
+        defer flippedBits.Close()
+        
+        flipped := make([]bool, 0, 1000000)
+        for {
+            b, err := flippedBits.ReadBit()
+            if err != nil { break }
+            if b > 0 {
+                flipped = append(flipped, true)
+            } else {
+                flipped = append(flipped, false)
+            }
+        }
+        log.Printf("Read %d bits indicating whether reads were flipped.", len(flipped))
+        return flipped
+    } else {
+        log.Printf("No flipped bit file (%s) found; ignoring.", flippedFN)
+        return nil
+    }
+}
+
+// readNLocations() reads the compressed N location file and returns a slice of
+// slices that contain the positions of the Ns. An optimization is made that if
+// there are no Ns in a read, then out[r] will be nil rather than an empty
+// list.  If the file is not found, will return nil
+func readNLocations(nLocFN string) [][]byte {
+    // open the file; return empty if nothing there
+    inNs, err := os.Open(nLocFN)
+    if err == nil {
+        log.Printf("Reading locations of Ns from %s", nLocFN)
+        defer inNs.Close()
+        inZ, err := gzip.NewReader(inNs)
+        DIE_ON_ERR(err, "Couldn't create gzipper for N locations")
+        defer inZ.Close()
+
+        locs := make([][]byte, 0, 10000000)
+        ncount := 0
+        
+        // for every line in the input file
+        scanner := bufio.NewScanner(inZ)
+        for scanner.Scan() {
+
+            // split into the list of integers (as strings)
+            posns := strings.Split(strings.TrimSpace(scanner.Text()), " ")
+
+            // if there are any Ns in this read
+            if len(posns) > 0  && posns[0] != "" {
+                // create a new slice to hold them, and convert them to integers
+                locs = append(locs, make([]byte, 0))
+                for _, v := range posns {
+                    p, err := strconv.Atoi(v)
+                    DIE_ON_ERR(err, "Badly formatted N location file!")
+                    locs[len(locs)-1] = append(locs[len(locs)-1], byte(p))
+                }
+                ncount += len(posns)
+            } else {
+                // otherwise, for reads with no Ns, the slice is just nil
+                locs = append(locs, nil)
+            }
+        }
+        DIE_ON_ERR(scanner.Err(), "Couldn't finish reading N locations")
+        log.Printf("Read locations for %d Ns.", ncount)
+        return locs
+    } else {
+        log.Printf("No file with N locations (%s) was found; ignoring.", nLocFN)
+        return nil
+    }
 }
 
 // dart() finds the interval in the given distribution that contains the given
@@ -618,6 +783,7 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 	}
 }
 
+// decodeSingleRead() does the work of decoding a single read. 
 func decodeSingleRead(
     contextMer Kmer, 
     hash KmerHash, 
@@ -648,12 +814,24 @@ func decodeSingleRead(
     }
 }
 
+// replace the letters at the given position by Ns
+func putbackNs(s string, p []byte) string {
+    b := []byte(s)
+    for _, v := range p {
+        b[v] = 'N'
+    }
+    return string(b)
+}
+
+
 // decodeReads() decodes the file wrapped by the given Decoder, using the
 // kmers, counts, and hash table provided. It writes its output to the given
 // io.Writer.
 func decodeReads(
     kmers []string, 
     counts []int, 
+    isFlipped []bool,
+    nLocations [][]byte,
     hash KmerHash, 
     readLen int, 
     out io.Writer, 
@@ -661,13 +839,33 @@ func decodeReads(
 ) {
 	log.Printf("Decoding reads...")
 
+	n := 0
+    ncount := 0
 	buf := bufio.NewWriter(out)
+
+    patchAndWriteRead := func(head, tail string) {
+        // put the head & tail together
+        s := fmt.Sprintf("%s%s", head, tail)
+        // put back the ns if we have them
+        if nLocations != nil {
+            s = putbackNs(s, nLocations[n])
+            ncount += len(nLocations[n])
+        }
+        // unflip the reads if we have them
+        if isFlipped != nil && isFlipped[n] {
+            s = reverseComplement(s)
+            flipped++
+        }
+        // write it out
+        buf.Write([]byte(s))
+        buf.WriteByte('\n')
+        return
+    }
 
     // tailBuf is a buffer for read tails returned by decodeSingleRead
     tailLen := readLen-len(kmers[0])
     tailBuf := make([]byte, tailLen)
 
-	n := 0
     // for every bucket
     for curBucket, c := range counts {
         contextMer := stringToKmer(kmers[curBucket])
@@ -677,24 +875,21 @@ func decodeReads(
         if c < 0 {
             decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
             for j := 0; j < AbsInt(c); j++ {
-                buf.Write([]byte(kmers[curBucket]))
-                buf.Write(tailBuf)
-                buf.WriteByte('\n')
+                patchAndWriteRead(kmers[curBucket], string(tailBuf))
                 n++
             }
         } else {
             // otherwise, decode a read for each string in the bucket
             for j := 0; j < c; j++ {
-		        buf.Write([]byte(kmers[curBucket]))
                 decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
-                buf.Write(tailBuf)
-                buf.WriteByte('\n')
+                patchAndWriteRead(kmers[curBucket], string(tailBuf))
                 n++
             }
         }
     }
 	buf.Flush()
-	log.Printf("done. Wrote %v reads.", n)
+	log.Printf("Added back %d Ns to the reads.", ncount)
+	log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
 }
 
 //===================================================================
@@ -739,8 +934,10 @@ func writeGlobalOptions() {
 func main() {
 	log.Println("Starting kpath version 5-28-14")
 
-	log.Println("Maximum threads = 4")
-	runtime.GOMAXPROCS(4)
+    startTime := time.Now()
+
+	log.Println("Maximum threads = 6")
+	runtime.GOMAXPROCS(6)
 
 	// parse the command line
 	const (
@@ -849,6 +1046,25 @@ func main() {
 			close(waitForCounts)
 		}()
 
+        // read the flipped bits --- flipped by be 0-length if no file could be
+        // found; this indicates that either nothing was flipped or we don't
+        // care about orientation
+        var flipped []bool
+        waitForFlipped := make(chan struct{})
+        go func() {
+            flipped = readFlipped(readFile + ".flipped")
+            close(waitForFlipped)
+        }()
+
+        // read the NLocations, which might be 0-length if no file could be
+        // found; this indicates that the Ns were recorded some other way.
+        var NLocations [][]byte
+        waitForNLocations := make(chan struct{})
+        go func() {
+            NLocations = readNLocations(readFile + ".ns")
+            close(waitForNLocations)
+        }()
+
 		// open encoded read file
 		encIn, err := os.Open(tailsFN)
 		DIE_ON_ERR(err, "Can't open encoded read file %s", tailsFN)
@@ -871,10 +1087,15 @@ func main() {
 		<-waitForReference
 		<-waitForBuckets
 		<-waitForCounts
+        <-waitForFlipped
+        <-waitForNLocations
 		log.Printf("Read length = %d", readlen)
-		decodeReads(kmers, counts, hash, readlen, outF, decoder)
+		decodeReads(kmers, counts, flipped, NLocations, hash, readlen, outF, decoder)
 	}
 	log.Printf("Default interval used %v times and context used %v times",
 		defaultUsed, contextExists)
+
+    endTime := time.Now()
+    log.Printf("kpath took %v to run.", endTime.Sub(startTime).Seconds())
 }
 
