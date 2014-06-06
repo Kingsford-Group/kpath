@@ -1,5 +1,7 @@
 package main
 
+/* Version June 6, 2014 */
+
 /* TODO:
 
 1. Paired ends:
@@ -934,7 +936,7 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 5-28-14")
+	log.Println("Starting kpath version 6-6-14")
 
     startTime := time.Now()
 
