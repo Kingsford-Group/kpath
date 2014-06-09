@@ -517,9 +517,9 @@ func writeFlipped(out *bitio.Writer, reads []*FastQ) {
 
 // encodeSingleReadWithBucket() encodes a single read: uses a bucketing scheme
 // for initial part, and arithmetic encoding for the rest.
-func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) {
+func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
-    contextMer := stringToKmer(r[:globalK])
+    //contextMer := stringToKmer(r[:globalK])
 
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
@@ -636,18 +636,19 @@ func encodeWithBuckets(
 	waitForReads := make(chan struct{})
 	go func() {
         curRead := 0
-        for _, c := range counts {
+        for i, c := range counts {
+            bucketMer := stringToKmer(buckets[i])
             if c > 0 {
                 // write out the given number of reads
                 for j := 0; j < c; j++ {
-                    encodeSingleReadWithBucket(string(reads[curRead].Seq), hash, coder)
+                    encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
                     curRead++
                     n++
                 }
             } else {
                 // all the reads in this bucket are the same, so just write one
                 // and skip past the rest.
-                encodeSingleReadWithBucket(string(reads[curRead].Seq), hash, coder)
+                encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
                 curRead += AbsInt(c)
                 n++
             }
