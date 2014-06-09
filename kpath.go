@@ -41,7 +41,7 @@ type KmerInfo struct {
 }
 
 // A KmerHash contains the context database.
-type KmerHash map[Kmer]*KmerInfo
+type KmerHash map[Kmer]KmerInfo
 
 // A WeightXformFcn represents a function that can transform distribution
 // counts.
@@ -240,11 +240,15 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 		}
 		contextMer := stringToKmer(s[:k])
 		for i := 0; i < len(s)-k; i++ {
-			if _, ok := hash[contextMer]; !ok {
-				hash[contextMer] = &KmerInfo{}
-			}
+			info := hash[contextMer]
+            //if !ok {
+			//	info = KmerInfo{} //XXX
+			//}
 			next := acgt(s[i+k])
-			hash[contextMer].next[next] += observationInc
+            info.next[next] += observationInc
+            hash[contextMer] = info
+
+			// XXX hash[contextMer].next[next] += observationInc
 			contextMer = shiftKmer(contextMer, next)
 		}
 	}
@@ -329,6 +333,7 @@ func nextInterval(
             } else {
                 info.next[kidx]++
             }
+            hash[contextMer] = info
         }
 	} else {
 		// if the context doesnt exist, use a simple default interval
@@ -338,7 +343,7 @@ func nextInterval(
 
         if updateReference {
             // add this to the context now
-            info := &KmerInfo{}
+            //info := KmerInfo{}
             info.next[kidx]++
             hash[contextMer] = info
             //hash[contextMer] = &KmerInfo{}
