@@ -10,7 +10,7 @@ import (
 // Represents a fastQ record
 type FastQ struct {
     Seq []byte
-    Quals []byte
+    //Quals []byte
     NLocations []byte
     IsFlipped bool
 }
@@ -19,12 +19,12 @@ type FastQ struct {
 func NewFastQ(seq []byte, quals []byte) *FastQ {
     f := FastQ{ 
        Seq: make([]byte, len(seq)),
-       Quals: make([]byte, len(quals)),
+       //Quals: make([]byte, len(quals)),
        NLocations: make([]byte, 0),
        IsFlipped: false,
     }
     copy(f.Seq, seq)
-    copy(f.Quals, quals)
+    //copy(f.Quals, quals)
     f.RemoveNs()
     return &f
 }
@@ -48,9 +48,9 @@ func (q *FastQ) SetReverseComplement(rc string) {
     q.Seq = []byte(rc)
 
     // reverse the quality array
-    for i, j := 0, len(q.Quals)-1; i < j; i, j = i+1, j-1 {
-        q.Quals[i], q.Quals[j] = q.Quals[j], q.Quals[i]
-    }
+    //for i, j := 0, len(q.Quals)-1; i < j; i, j = i+1, j-1 {
+    //    q.Quals[i], q.Quals[j] = q.Quals[j], q.Quals[i]
+    //}
     
     // reverse complement the locations
     for i, v := range q.NLocations {
@@ -65,7 +65,7 @@ func (q *FastQ) SetReverseComplement(rc string) {
 // PrintFastQ prints out the fastq record (used only for debugging).
 func PrintFastQ(q *FastQ) {
     fmt.Println(string(q.Seq))
-    fmt.Println(string(q.Quals))
+    //fmt.Println(string(q.Quals))
     fmt.Printf("%v\n", q.NLocations)
 }
 
