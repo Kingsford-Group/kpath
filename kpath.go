@@ -75,6 +75,7 @@ var (
     writeFlippedOption bool = true
     updateReference    bool = true
 
+	cpuProfile         string = "" //"encode.pprof" // set to nonempty to write profile to this file
     writeQualOption    bool = false // NYI completely
 )
 
@@ -86,7 +87,6 @@ const (
 
 	smoothOption    bool = false
 
-	cpuProfile string = "" //"encode.pprof" // set to nonempty to write profile to this file
 )
 
 //===================================================================
@@ -923,6 +923,8 @@ func init() {
 	encodeFlags.IntVar(&globalK, "k", 16, "length of k")
     encodeFlags.BoolVar(&flipReadsOption, "flip", true, "if true, reverse complement reads as needed") 
     encodeFlags.BoolVar(&dupsOption, "dups", true, "if true, record dups specially")
+
+    encodeFlags.StringVar(&cpuProfile, "cpuProfile", "", "if nonempty, write pprof profile to given file.")
 }
 
 // writeGlobalOptions() writes out the global variables that can affect the
