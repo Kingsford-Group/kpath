@@ -241,14 +241,10 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 		contextMer := stringToKmer(s[:k])
 		for i := 0; i < len(s)-k; i++ {
 			info := hash[contextMer]
-            //if !ok {
-			//	info = KmerInfo{} //XXX
-			//}
 			next := acgt(s[i+k])
             info.next[next] += observationInc
             hash[contextMer] = info
 
-			// XXX hash[contextMer].next[next] += observationInc
 			contextMer = shiftKmer(contextMer, next)
 		}
 	}
@@ -343,11 +339,8 @@ func nextInterval(
 
         if updateReference {
             // add this to the context now
-            //info := KmerInfo{}
             info.next[kidx]++
             hash[contextMer] = info
-            //hash[contextMer] = &KmerInfo{}
-            //hash[contextMer].next[kidx]++
         }
 	}
 	return
@@ -392,7 +385,7 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     // start the reading routine
     log.Printf("Reading reads...")
     readStart := time.Now()
-    fq := make(chan *FastQ, 1000000)
+    fq := make(chan *FastQ, 10000000)
     go ReadFastQ(readFile, fq)
 
     reads := make([]*FastQ, 0, 10000000)
@@ -450,8 +443,8 @@ func listBuckets(reads []*FastQ) ([]string, []int) {
 	curBucket := ""
     firstRead := ""
     allSame := false
-	buckets := make([]string, 0)
-	counts := make([]int, 0)
+	buckets := make([]string, 0, 1000000)
+	counts := make([]int, 0, 1000000)
 
 	for _, rec := range reads {
         r := string(rec.Seq)
@@ -964,6 +957,7 @@ func init() {
 	encodeFlags.IntVar(&globalK, "k", 16, "length of k")
     encodeFlags.BoolVar(&flipReadsOption, "flip", true, "if true, reverse complement reads as needed") 
     encodeFlags.BoolVar(&dupsOption, "dups", true, "if true, record dups specially")
+    encodeFlags.BoolVar(&updateReference, "update", true, "if true, update the reference dynamically")
 
     encodeFlags.StringVar(&cpuProfile, "cpuProfile", "", "if nonempty, write pprof profile to given file.")
 }
@@ -979,6 +973,7 @@ func writeGlobalOptions() {
 	log.Printf("Option: smoothOption = %v", smoothOption)
 	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
     log.Printf("Option: dupsOption = %v", dupsOption)
+    log.Printf("Option: updateReference = %v", updateReference)
 }
 
 // main() encodes or decodes a set of reads based on the first command line
