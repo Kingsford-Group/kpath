@@ -4,9 +4,6 @@ package main
 
 /* TODO:
 
-1. Paired ends:
-    - bucket1 bucket2 XXX YYY
-
 4. conserve memory with a DNAString type (?)
 5. add some more unit tests
 */
@@ -76,6 +73,7 @@ var (
     dupsOption         bool = true
     writeNsOption      bool = true
     writeFlippedOption bool = true
+    updateReference    bool = true
 
     writeQualOption    bool = false // NYI completely
 )
@@ -325,20 +323,27 @@ func nextInterval(
 	if ok {
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
-		if info.next[kidx] >= seenThreshold { // increment double if in the transcriptome
-			info.next[kidx] += observationInc
-		} else {
-			info.next[kidx]++
-		}
+        if updateReference {
+            if info.next[kidx] >= seenThreshold { // increment double if in the transcriptome
+                info.next[kidx] += observationInc
+            } else {
+                info.next[kidx]++
+            }
+        }
 	} else {
 		// if the context doesnt exist, use a simple default interval
 		defaultUsed++
 		a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
 		defaultInterval[kidx]++
 
-		// add this to the context now
-		hash[contextMer] = &KmerInfo{}
-		hash[contextMer].next[kidx]++
+        if updateReference {
+            // add this to the context now
+            info := &KmerInfo{}
+            info.next[kidx]++
+            hash[contextMer] = info
+            //hash[contextMer] = &KmerInfo{}
+            //hash[contextMer].next[kidx]++
+        }
 	}
 	return
 }
@@ -473,8 +478,7 @@ func writeFlipped(out *bitio.Writer, reads []*FastQ) {
 // for initial part, and arithmetic encoding for the rest.
 func encodeSingleReadWithBucket(r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
-	context := r[:globalK]
-	contextMer := stringToKmer(context)
+    contextMer := stringToKmer(r[:globalK])
 
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
@@ -931,6 +935,7 @@ func writeGlobalOptions() {
 	log.Printf("Option: observationInc = %d", observationInc)
 	log.Printf("Option: smoothOption = %v", smoothOption)
 	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
+    log.Printf("Option: dupsOption = %v", dupsOption)
 }
 
 // main() encodes or decodes a set of reads based on the first command line
@@ -979,10 +984,12 @@ func main() {
 	var hash KmerHash
 	waitForReference := make(chan struct{})
 	go func() {
+        refStart := time.Now()
 		hash = countKmersInReference(globalK, refFile)
 		log.Printf("There are %v unique %v-mers in the reference\n",
 			len(hash), globalK)
 		capTransitionCounts(hash, 2)
+        log.Printf("Time: Took %v seconds to read reference.", time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
 	}()
 
