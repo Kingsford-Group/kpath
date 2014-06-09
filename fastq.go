@@ -73,7 +73,6 @@ func PrintFastQ(q *FastQ) {
 // given channel. It will remove Ns from the sequence and replace them with As.
 func ReadFastQ(filename string, out chan<- *FastQ) {
     // open the file
-    fmt.Println(filename)
 	in, err := os.Open(filename)
 	DIE_ON_ERR(err, "Couldn't open read file %s", filename)
 	defer in.Close()

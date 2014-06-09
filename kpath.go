@@ -371,7 +371,17 @@ func countMatchingObservations(hash KmerHash, r string) (n uint32) {
 type Lexicographically []*FastQ
 func (a Lexicographically) Len() int { return len(a) }
 func (a Lexicographically) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a Lexicographically) Less(i, j int) bool { return string(a[i].Seq) < string(a[j].Seq) }
+
+func (a Lexicographically) Less(i, j int) bool { 
+    for i, c := range a[i].Seq[:globalK] {
+        d := a[j].Seq[i]
+        if c < d { return true }
+        if c > d { return false }
+    }
+    return false
+}
+        
+       // return string(a[i].Seq) < string(a[j].Seq) }
 
 
 // readAndFlipReads() reads the reads and reverse complements them if the
@@ -382,7 +392,7 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     // start the reading routine
     log.Printf("Reading reads...")
     readStart := time.Now()
-    fq := make(chan *FastQ, 10000)
+    fq := make(chan *FastQ, 100000)
     go ReadFastQ(readFile, fq)
 
     reads := make([]*FastQ, 0, 10000000)
@@ -414,6 +424,25 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(readEnd).Seconds())
     return reads
 }
+
+/*
+type Bucket struct {
+    reads []int
+    seq Kmer
+}
+
+func listBuckets(reads []*FastQ) map[Kmer]Bucket {
+    buckets := make(map[Kmer][]int, 1000000)
+
+    // for every read
+    for nr, fq := range reads {
+        // figure out it's head and add the index of this read to that bucket
+        b := stringToKmer(string(rec.Seq[:globalK]))
+        buckets[b].reads = append(buckets[b].reads, nr)
+    }
+    buckets
+}
+*/
 
 // listBuckets() processes the reads and creates the bucket list and the list
 // of the bucket sizes and returns them.
