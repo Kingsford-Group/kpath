@@ -380,7 +380,9 @@ func (a Lexicographically) Less(i, j int) bool { return string(a[i].Seq) < strin
 // No other characters are transformed and will eventually lead to a panic.
 func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*FastQ {
     // start the reading routine
-    fq := make(chan *FastQ)
+    log.Printf("Reading reads...")
+    readStart := time.Now()
+    fq := make(chan *FastQ, 10000)
     go ReadFastQ(readFile, fq)
 
     reads := make([]*FastQ, 0, 10000000)
@@ -401,10 +403,15 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
         // save it in our read list
         reads = append(reads, rec)
     }
+    readEnd := time.Now()
 
     // sort the records by sequence
     sort.Sort(Lexicographically(reads))
-	log.Printf("Read %v reads; flipped %v of them.\n", len(reads), flipped)
+    readSort := time.Now()
+
+	log.Printf("Read %v reads; flipped %v of them.", len(reads), flipped)
+    log.Printf("Time: reading and flipping: %v seconds.", readEnd.Sub(readStart).Seconds())
+    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(readEnd).Seconds())
     return reads
 }
 
@@ -669,7 +676,7 @@ func readBucketCounts(countsFN string) ([]int, int) {
 // was flipped or not. If the file does not exist, returns nil.
 func readFlipped(flippedFN string) []bool {
     // open the file; return empty if nothing there
-    flippedIn, err := os.Open("test.flipped")
+    flippedIn, err := os.Open(flippedFN)
     if err == nil {
         log.Printf("Reading flipped bits from %s", flippedFN)
         defer flippedIn.Close()

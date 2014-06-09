@@ -116,7 +116,7 @@ func decodeBitTree(bits <-chan byte, k int, out chan<- string) {
 // kmers must be sorted and they must be unique.
 func encodeKmersToFile(kmers []string, out *bitio.Writer) {
 	log.Printf("Encoding %v kmers to bittree file...", len(kmers))
-	bits := make(chan byte)
+	bits := make(chan byte, 1000000)
 	go traverseToBitTree(kmers, bits)
 
 	count := 0
@@ -159,11 +159,11 @@ func decodeKmersFromFile(filename string, k int) []string {
 	defer in.Close()
 
 	// start a routine to produce the bits
-	bits := make(chan byte)
+	bits := make(chan byte, 1000000)
 	go readBits(in, bits)
 
 	// make a channel to get the output
-	out := make(chan string)
+	out := make(chan string, 1000000)
 
 	// decode and pass the input to the decoded output
 	go decodeBitTree(bits, k, out)
