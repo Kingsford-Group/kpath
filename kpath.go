@@ -519,8 +519,6 @@ func writeFlipped(out *bitio.Writer, reads []*FastQ) {
 // for initial part, and arithmetic encoding for the rest.
 func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
-    //contextMer := stringToKmer(r[:globalK])
-
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
 		a, b, total := nextInterval(hash, contextMer, char)
