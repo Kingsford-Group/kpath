@@ -401,18 +401,11 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     for rec := range fq {
         // possibly flip it
         if flipReadsOption {
-            var n1, n2 uint32
-            waitForFirst := make(chan struct{})
-            go func() {
-                n1 = countMatchingObservations(hash, string(rec.Seq))
-                close(waitForFirst)
-            }()
-
+            n1 := countMatchingObservations(hash, string(rec.Seq))
             rcr := reverseComplement(string(rec.Seq))
-            n2 = countMatchingObservations(hash, rcr)
+            n2 := countMatchingObservations(hash, rcr)
 
 			// if they are tied, take the lexigographically smaller one
-            <-waitForFirst
 			if n2 > n1 || (n2 == n1 && string(rcr) < string(rec.Seq)) {
 				rec.SetReverseComplement(rcr)
 				flipped++
@@ -992,7 +985,7 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 6-6-14")
+	log.Println("Starting kpath version 6-9-14")
 
     startTime := time.Now()
 
