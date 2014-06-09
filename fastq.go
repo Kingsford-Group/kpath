@@ -42,9 +42,10 @@ func (q *FastQ) RemoveNs() {
 
 // ReverseComplement() will reverse complement a FastQ record, including
 // reversing its quality values and updating it's Nlocations.
-func (q *FastQ) ReverseComplement() {
+func (q *FastQ) SetReverseComplement(rc string) {
     // reverse complement the sequence
-    q.Seq = []byte(reverseComplement(string(q.Seq)))
+    //q.Seq = []byte(reverseComplement(string(q.Seq)))
+    q.Seq = []byte(rc)
 
     // reverse the quality array
     for i, j := 0, len(q.Quals)-1; i < j; i, j = i+1, j-1 {

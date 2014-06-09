@@ -392,7 +392,7 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     // start the reading routine
     log.Printf("Reading reads...")
     readStart := time.Now()
-    fq := make(chan *FastQ, 100000)
+    fq := make(chan *FastQ, 1000000)
     go ReadFastQ(readFile, fq)
 
     reads := make([]*FastQ, 0, 10000000)
@@ -401,12 +401,20 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     for rec := range fq {
         // possibly flip it
         if flipReadsOption {
-			n1 := countMatchingObservations(hash, string(rec.Seq))
-			rcr := reverseComplement(string(rec.Seq))
-			n2 := countMatchingObservations(hash, rcr)
+            var n1, n2 uint32
+            waitForFirst := make(chan struct{})
+            go func() {
+                n1 = countMatchingObservations(hash, string(rec.Seq))
+                close(waitForFirst)
+            }()
+
+            rcr := reverseComplement(string(rec.Seq))
+            n2 = countMatchingObservations(hash, rcr)
+
 			// if they are tied, take the lexigographically smaller one
+            <-waitForFirst
 			if n2 > n1 || (n2 == n1 && string(rcr) < string(rec.Seq)) {
-				rec.ReverseComplement()
+				rec.SetReverseComplement(rcr)
 				flipped++
 			}
         }
@@ -428,7 +436,6 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
 /*
 type Bucket struct {
     reads []int
-    seq Kmer
 }
 
 func listBuckets(reads []*FastQ) map[Kmer]Bucket {
@@ -440,7 +447,7 @@ func listBuckets(reads []*FastQ) map[Kmer]Bucket {
         b := stringToKmer(string(rec.Seq[:globalK]))
         buckets[b].reads = append(buckets[b].reads, nr)
     }
-    buckets
+    
 }
 */
 
@@ -631,6 +638,7 @@ func encodeWithBuckets(
 
 
 	/*** The main work to encode the read tails ***/
+    encodeStart := time.Now()
 	log.Printf("Encoding reads, each of length %d ...", readLength)
 	waitForReads := make(chan struct{})
 	go func() {
@@ -660,7 +668,7 @@ func encodeWithBuckets(
     <-waitForNs
     <-waitForFlipped
 	<-waitForReads
-	log.Printf("done.")
+	log.Printf("done. Took %v seconds to encode the tails.", time.Now().Sub(encodeStart).Seconds())
 	return
 }
 
@@ -988,8 +996,8 @@ func main() {
 
     startTime := time.Now()
 
-	log.Println("Maximum threads = 6")
-	runtime.GOMAXPROCS(6)
+	log.Println("Maximum threads = 8")
+	runtime.GOMAXPROCS(8)
 
 	// parse the command line
 	const (
