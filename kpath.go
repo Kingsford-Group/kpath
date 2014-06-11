@@ -33,7 +33,7 @@ import (
 //===================================================================
 
 // A Kmer represents a kmer of size < 32.
-type Kmer uint32
+type Kmer uint64
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -545,7 +545,7 @@ func encodeWithBuckets(
         DIE_ON_ERR(err, "Couldn't create flipped file: %s", outBaseName + ".flipped")
         defer outFlipped.Close()
 
-        outFlippedZ, err := gzip.NewWriterLevel(bufio.NewWriter(outFlipped), gzip.BestCompression)
+        outFlippedZ, err := gzip.NewWriterLevel(outFlipped, gzip.BestCompression)
         DIE_ON_ERR(err, "Couldn't create gzipper for flipped file.")
         defer outFlippedZ.Close()
 
@@ -567,7 +567,7 @@ func encodeWithBuckets(
         DIE_ON_ERR(err, "Couldn't create N location file: %s", outBaseName + ".ns")
         defer outNs.Close()
 
-        outNsZ, err := gzip.NewWriterLevel(bufio.NewWriter(outNs), gzip.BestCompression)
+        outNsZ, err := gzip.NewWriterLevel(outNs, gzip.BestCompression)
         DIE_ON_ERR(err, "Couldn't create gzipper for N location file.")
         defer outNsZ.Close()
 
@@ -588,7 +588,7 @@ func encodeWithBuckets(
 	defer outBT.Close()
 
 	// compress the file with gzip as we are writing it
-	outBZ, err := gzip.NewWriterLevel(bufio.NewWriter(outBT), gzip.BestCompression)
+	outBZ, err := gzip.NewWriterLevel(outBT, gzip.BestCompression)
 	DIE_ON_ERR(err, "Couldn't create gzipper for bucket file")
 	defer outBZ.Close()
 
@@ -609,7 +609,7 @@ func encodeWithBuckets(
 	defer countF.Close()
 
 	// compress it as we are writing it
-	countZ, err := gzip.NewWriterLevel(bufio.NewWriter(countF), gzip.BestCompression)
+	countZ, err := gzip.NewWriterLevel(countF, gzip.BestCompression)
 	DIE_ON_ERR(err, "Couldn't create gzipper for count file")
 	defer countZ.Close()
 
@@ -1053,7 +1053,7 @@ func main() {
 		DIE_ON_ERR(err, "Couldn't create output file %s", outFile)
 		defer outF.Close()
 
-		writer := bitio.NewWriter(bufio.NewWriter(outF))
+		writer := bitio.NewWriter(outF)
 		defer writer.Close()
 
 		// create encoder
