@@ -979,7 +979,7 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 6-9-14")
+	log.Println("Starting kpath version 6-11-14")
 
     startTime := time.Now()
 
@@ -1004,7 +1004,7 @@ func main() {
 		log.SetPrefix("kpath (decode): ")
 	}
 	encodeFlags.Parse(os.Args[2:])
-	if globalK <= 0 || globalK > 16 {
+	if globalK <= 0 || globalK > 32 {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
 	log.Printf("Using kmer size = %d", globalK)
