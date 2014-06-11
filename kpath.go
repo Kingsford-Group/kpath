@@ -33,7 +33,7 @@ import (
 //===================================================================
 
 // A Kmer represents a kmer of size < 32.
-type Kmer uint64
+type Kmer uint32
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -1004,7 +1004,7 @@ func main() {
 		log.SetPrefix("kpath (decode): ")
 	}
 	encodeFlags.Parse(os.Args[2:])
-	if globalK <= 0 || globalK > 32 {
+	if globalK <= 0 || globalK > 16 {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
 	log.Printf("Using kmer size = %d", globalK)
