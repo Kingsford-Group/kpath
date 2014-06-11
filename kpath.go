@@ -545,7 +545,7 @@ func encodeWithBuckets(
         DIE_ON_ERR(err, "Couldn't create flipped file: %s", outBaseName + ".flipped")
         defer outFlipped.Close()
 
-        outFlippedZ, err := gzip.NewWriterLevel(outFlipped, gzip.BestCompression)
+        outFlippedZ, err := gzip.NewWriterLevel(bufio.NewWriter(outFlipped), gzip.BestCompression)
         DIE_ON_ERR(err, "Couldn't create gzipper for flipped file.")
         defer outFlippedZ.Close()
 
@@ -567,7 +567,7 @@ func encodeWithBuckets(
         DIE_ON_ERR(err, "Couldn't create N location file: %s", outBaseName + ".ns")
         defer outNs.Close()
 
-        outNsZ, err := gzip.NewWriterLevel(outNs, gzip.BestCompression)
+        outNsZ, err := gzip.NewWriterLevel(bufio.NewWriter(outNs), gzip.BestCompression)
         DIE_ON_ERR(err, "Couldn't create gzipper for N location file.")
         defer outNsZ.Close()
 
@@ -588,7 +588,7 @@ func encodeWithBuckets(
 	defer outBT.Close()
 
 	// compress the file with gzip as we are writing it
-	outBZ, err := gzip.NewWriterLevel(outBT, gzip.BestCompression)
+	outBZ, err := gzip.NewWriterLevel(bufio.NewWriter(outBT), gzip.BestCompression)
 	DIE_ON_ERR(err, "Couldn't create gzipper for bucket file")
 	defer outBZ.Close()
 
@@ -609,7 +609,7 @@ func encodeWithBuckets(
 	defer countF.Close()
 
 	// compress it as we are writing it
-	countZ, err := gzip.NewWriterLevel(countF, gzip.BestCompression)
+	countZ, err := gzip.NewWriterLevel(bufio.NewWriter(countF), gzip.BestCompression)
 	DIE_ON_ERR(err, "Couldn't create gzipper for count file")
 	defer countZ.Close()
 
@@ -1004,7 +1004,7 @@ func main() {
 		log.SetPrefix("kpath (decode): ")
 	}
 	encodeFlags.Parse(os.Args[2:])
-	if globalK <= 0 {
+	if globalK <= 0 || globalK >= 16 {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
 	log.Printf("Using kmer size = %d", globalK)
@@ -1053,7 +1053,7 @@ func main() {
 		DIE_ON_ERR(err, "Couldn't create output file %s", outFile)
 		defer outF.Close()
 
-		writer := bitio.NewWriter(outF)
+		writer := bitio.NewWriter(bufio.NewWriter(outF))
 		defer writer.Close()
 
 		// create encoder
