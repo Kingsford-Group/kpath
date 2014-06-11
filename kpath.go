@@ -1004,7 +1004,7 @@ func main() {
 		log.SetPrefix("kpath (decode): ")
 	}
 	encodeFlags.Parse(os.Args[2:])
-	if globalK <= 0 || globalK >= 16 {
+	if globalK <= 0 || globalK > 16 {
 		log.Fatalf("K must be specified as a small positive integer with -k")
 	}
 	log.Printf("Using kmer size = %d", globalK)
