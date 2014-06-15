@@ -43,6 +43,7 @@ var (
 	charCount    uint64
 	smoothFile   *os.File
 	tmpByteSlice []byte = make([]byte, 2)
+	readStartInterval [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
 )
 
 /* encode a single read: uses 1 scheme for initial part, and 1 scheme for the rest */

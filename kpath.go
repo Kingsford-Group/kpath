@@ -37,6 +37,7 @@ import (
 type Kmer uint32
 
 type KmerCount uint16
+const MAX_OBSERVATION uint32 = (1 << 16) - 1
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -62,8 +63,7 @@ var (
 	globalK       int
 	shiftKmerMask Kmer
 
-	defaultInterval   [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
-	readStartInterval [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
+	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
 
 	defaultUsed   int
 	contextExists int
@@ -245,7 +245,8 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 		for i := 0; i < len(s)-k; i++ {
 			info := hash[contextMer]
 			next := acgt(s[i+k])
-            info.next[next] += observationInc
+            //info.next[next] += observationInc XXX
+            info.next[next] = observationInc
             hash[contextMer] = info
 
 			contextMer = shiftKmer(contextMer, next)
@@ -314,6 +315,23 @@ func intervalFor(
 	return
 }
 
+// XXX
+func intervalForDefault(letter byte) (a uint64, b uint64, total uint64) {
+    letterIdx := int(letter)
+    for i := 0; i < len(defaultInterval); i++ {
+        w := uint64(defaultInterval[i])
+        total += w
+        if i <= letterIdx {
+            b += w
+            if i < letterIdx {
+                a += w
+            }
+        }
+    }
+    return
+}
+    
+
 // nextInterval() computes the interval for the given context and updates the
 // default distribution and context distributions as required.
 func nextInterval(
@@ -327,8 +345,11 @@ func nextInterval(
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
         if updateReference {
-            if info.next[kidx] >= seenThreshold { // increment double if in the transcriptome
-                info.next[kidx] += observationInc
+            prevVal := info.next[kidx]
+            if prevVal >= seenThreshold { 
+                if uint32(prevVal) + uint32(observationInc) < MAX_OBSERVATION {
+                    info.next[kidx] += observationInc
+                }
             } else {
                 info.next[kidx]++
             }
@@ -337,7 +358,8 @@ func nextInterval(
 	} else {
 		// if the context doesnt exist, use a simple default interval
 		defaultUsed++
-		a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
+		//a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
+        a, b, total = intervalForDefault(kidx)
 		defaultInterval[kidx]++
 
         if updateReference {
@@ -798,13 +820,25 @@ func dart(
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
 }
 
+func dartDefault(target uint64) (uint64, uint64, uint64) {
+    sum := uint64(0)
+    for i, w := range defaultInterval {
+        sum += uint64(w)
+        if target < sum {
+            return sum - uint64(w), sum, uint64(i)
+        }
+    }
+	panic(fmt.Errorf("Couldn't find range for target %d", target))
+}
+
 // lookup() is called by arithc.Decoder to find an interval that contains the
 // given value t.
 func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
 	if info, ok := hash[context]; ok {
 		return dart(info.next, uint32(t), contextWeight)
 	} else {
-		return dart(defaultInterval, uint32(t), defaultWeight)
+		//return dart(defaultInterval, uint32(t), defaultWeight)
+		return dartDefault(t)
 	}
 }
 
@@ -824,7 +858,12 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 	if info, ok := hash[context]; ok {
 		return sumDist(info.next, contextWeight)
 	} else {
-		return sumDist(defaultInterval, defaultWeight)
+        s := uint64(0)
+        for i := 0; i <= len(defaultInterval); i++ {
+            s += uint64(defaultInterval[i])
+        }
+        return s
+		//return sumDist(defaultInterval, defaultWeight)
 	}
 }
 
@@ -1032,7 +1071,7 @@ func main() {
 		hash = countKmersInReference(globalK, refFile)
 		log.Printf("There are %v unique %v-mers in the reference\n",
 			len(hash), globalK)
-		capTransitionCounts(hash, 2)
+		//capTransitionCounts(hash, 2) XXX
         log.Printf("Time: Took %v seconds to read reference.", time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
 	}()
