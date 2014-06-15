@@ -859,7 +859,7 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 		return sumDist(info.next, contextWeight)
 	} else {
         s := uint64(0)
-        for i := 0; i <= len(defaultInterval); i++ {
+        for i := 0; i < len(defaultInterval); i++ {
             s += uint64(defaultInterval[i])
         }
         return s
