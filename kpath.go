@@ -23,6 +23,7 @@ import (
     "strconv"
     "time"
     "math"
+    "unsafe"
 
 	"kingsford/arithc"
 	"kingsford/bitio"
@@ -32,12 +33,14 @@ import (
 // Kmer types
 //===================================================================
 
-// A Kmer represents a kmer of size < 32.
+// A Kmer represents a kmer of size <= 16.
 type Kmer uint32
+
+type KmerCount uint16
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
-	next [len(ALPHA)]uint32
+	next [len(ALPHA)]KmerCount
 }
 
 // A KmerHash contains the context database.
@@ -45,7 +48,7 @@ type KmerHash map[Kmer]KmerInfo
 
 // A WeightXformFcn represents a function that can transform distribution
 // counts.
-type WeightXformFcn func(int, [len(ALPHA)]uint32) uint64
+type WeightXformFcn func(int, [len(ALPHA)]KmerCount) uint64
 
 //===================================================================
 // Globals
@@ -59,8 +62,8 @@ var (
 	globalK       int
 	shiftKmerMask Kmer
 
-	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
-	readStartInterval [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
+	defaultInterval   [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
+	readStartInterval [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
 
 	defaultUsed   int
 	contextExists int
@@ -82,8 +85,8 @@ var (
 const (
 	pseudoCount       uint64 = 1
 	observationWeight uint64 = 10
-	seenThreshold     uint32 = 2 // before this threshold, increment 1 and treat as unseen
-	observationInc    uint32 = 2 // once above seenThreshold, increment by this on each observation
+	seenThreshold     KmerCount = 2 // before this threshold, increment 1 and treat as unseen
+	observationInc    KmerCount = 2 // once above seenThreshold, increment by this on each observation
 
 	smoothOption    bool = false
 
@@ -254,7 +257,7 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 // capTransitionCounts() postprocesses the kmer hash to make all transition
 // counts at most the given max.
 func capTransitionCounts(hash KmerHash, max int) {
-	M := uint32(max)
+	M := KmerCount(max)
 	for _, v := range hash {
 		for i, count := range v.next {
 			if count > M {
@@ -272,7 +275,7 @@ func capTransitionCounts(hash KmerHash, max int) {
 // distribution weights according to the function for real contexts. If the
 // count is too small, it returns the pseudocount; if the count is big enough
 // it returns observationWeight * the distribution value.
-func contextWeight(charIdx int, dist [len(ALPHA)]uint32) (w uint64) {
+func contextWeight(charIdx int, dist [len(ALPHA)]KmerCount) (w uint64) {
 	if dist[charIdx] >= seenThreshold {
 		w = observationWeight * uint64(dist[charIdx]) / uint64(observationInc)
 		return
@@ -283,7 +286,7 @@ func contextWeight(charIdx int, dist [len(ALPHA)]uint32) (w uint64) {
 
 // defaultWeight() is a weight transformation function for the default
 // distribution. It returns the weight unchanged.
-func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
+func defaultWeight(charIdx int, dist [len(ALPHA)]KmerCount) uint64 {
 	return uint64(dist[charIdx])
 }
 
@@ -292,7 +295,7 @@ func defaultWeight(charIdx int, dist [len(ALPHA)]uint32) uint64 {
 // given weight transformation function).
 func intervalFor(
         letter byte, 
-        dist [len(ALPHA)]uint32, 
+        dist [len(ALPHA)]KmerCount, 
         weightOf WeightXformFcn,
 ) (a uint64, b uint64, total uint64) {
 
@@ -348,7 +351,7 @@ func nextInterval(
 
 // countMatchingObservations() counts the number of observaions of kmers in the
 // read.
-func countMatchingObservations(hash KmerHash, r string) (n uint32) {
+func countMatchingObservations(hash KmerHash, r string) (n KmerCount) {
 	contextMer := stringToKmer(r[:globalK])
 	for i := globalK; i < len(r); i++ {
 		symb := acgt(r[i])
@@ -780,7 +783,7 @@ func readNLocations(nLocFN string) [][]byte {
 // target, after transformming the distribution using the given weightOf
 // function. This is called by lookup() during decode.
 func dart(
-    dist [len(ALPHA)]uint32, 
+    dist [len(ALPHA)]KmerCount, 
     target uint32, 
     weightOf WeightXformFcn,
 ) (uint64, uint64, uint64) {
@@ -807,7 +810,7 @@ func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
 
 // sumDist() computes the sum of the items in the given distribution after
 // first transforming them via the given weightOf function.
-func sumDist(d [len(ALPHA)]uint32, weightOf WeightXformFcn) (total uint64) {
+func sumDist(d [len(ALPHA)]KmerCount, weightOf WeightXformFcn) (total uint64) {
 	for i := range d {
 		total += uint64(weightOf(i, d))
 	}
@@ -985,6 +988,9 @@ func main() {
 
 	log.Println("Maximum threads = 8")
 	runtime.GOMAXPROCS(8)
+
+    var kkk KmerInfo
+    fmt.Printf("Size = %v", unsafe.Sizeof(kkk))
 
 	// parse the command line
 	const (

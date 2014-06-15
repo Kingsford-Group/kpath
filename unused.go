@@ -128,8 +128,8 @@ func min64(a uint64, b uint64) uint64 {
 	return b
 }
 
-func maxChar(dist [len(ALPHA)]uint32) byte {
-	curMax := uint32(0)
+func maxChar(dist [len(ALPHA)]KmerCount) byte {
+	curMax := KmerCount(0)
 	curR := 0
 	for i, m := range dist {
 		if m > curMax {
