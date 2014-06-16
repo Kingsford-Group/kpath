@@ -451,8 +451,10 @@ func readAndFlipReads(
         log.Printf("Have %v read flippers, each working on %v reads", len(wait), blockSize)
         for i, c := range wait {
             go func(i int, c chan int) {
-                log.Printf("Worker %v flipping [%d, %d)...", i, i*blockSize, (i+1)*blockSize)
-                count := flipRange(reads[i*blockSize : (i+1)*blockSize], hash)
+                end := (i+1)*blockSize
+                if end > len(reads) { end = len(reads) }
+                log.Printf("Worker %v flipping [%d, %d)...", i, i*blockSize, end)
+                count := flipRange(reads[i*blockSize : end], hash)
                 log.Printf("Worker %v flipped %d reads", i, count)
                 c <- count
                 close(c)
