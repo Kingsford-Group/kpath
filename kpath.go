@@ -466,7 +466,7 @@ func listBuckets(reads []*FastQ) map[Kmer]Bucket {
 // of the bucket sizes and returns them.
 func listBuckets(reads []*FastQ) ([]string, []int) {
 	curBucket := ""
-    firstRead := ""
+    prevRead := ""
     allSame := false
 	buckets := make([]string, 0, 1000000)
 	counts := make([]int, 0, 1000000)
@@ -474,17 +474,20 @@ func listBuckets(reads []*FastQ) ([]string, []int) {
 	for _, rec := range reads {
         r := string(rec.Seq)
 		if r[:globalK] != curBucket {
-			curBucket = r[:globalK]
-            firstRead = r
             // if all the reads in a bucket are the same, record this
             // by negating the bucket count
             if dupsOption && allSame && counts[len(counts)-1] > 1 {
                 counts[len(counts)-1] = -counts[len(counts)-1]
             }
+
+			curBucket = r[:globalK]
+            prevRead = r
 			buckets = append(buckets, curBucket)
 			counts = append(counts, 1)
+            allSame = true
 		} else {
-            allSame = (r == firstRead)
+            allSame = allSame && (r == prevRead)
+            prevRead = r
 			counts[len(counts)-1]++
 		}
 	}
@@ -511,9 +514,9 @@ func writeNLocations(f io.Writer, reads []*FastQ) {
     for _, fq := range reads {
         for i, p := range fq.NLocations {
             fmt.Fprintf(f, "%d", p)
+            c++
             if i != len(fq.NLocations)-1 {
                 fmt.Fprintf(f, " ")
-                c++
             }
         }
         fmt.Fprintf(f, "\n")
