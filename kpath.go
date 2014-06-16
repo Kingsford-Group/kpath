@@ -37,7 +37,6 @@ type Kmer uint32
 
 type KmerCount uint16
 const MAX_OBSERVATION uint32 = (1 << 16) - 1
-const MAX_THREADS int = 10
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -77,6 +76,7 @@ var (
     writeNsOption      bool = true
     writeFlippedOption bool = true
     updateReference    bool = true
+    maxThreads         int = 10
 
 	cpuProfile         string = ""  // set to nonempty to write profile to this file
     writeQualOption    bool = false // NYI completely
@@ -438,13 +438,17 @@ func readAndFlipReads(
         reads = append(reads, rec)
     }
     readEnd := time.Now()
+    log.Printf("Time: read %v reads; spent %v seconds.", len(reads), readEnd.Sub(readStart).Seconds())
 
     // if enabled, start several threads to flip the reads
     if flipReadsOption {
-        // start MAX_THREADS-1 workers to flip the read ranges
-        wait := make([]chan int, MAX_THREADS-1)
-        blockSize := 1 + len(reads) / (MAX_THREADS-1)
-        fmt.Printf("Each read flipper working on %v reads", blockSize)
+        // start maxThreads-1 workers to flip the read ranges
+        wait := make([]chan int, maxThreads-1)
+        for i := range wait {
+            wait[i] = make(chan int)
+        }
+        blockSize := 1 + len(reads) / len(wait)
+        log.Printf("Have %v read flippers, each working on %v reads", len(wait), blockSize)
         for i, c := range wait {
             go func() {
                 c <- flipRange(reads[i : i + blockSize], hash)
@@ -458,15 +462,14 @@ func readAndFlipReads(
         }
     }
     flipEnd := time.Now()
+    log.Printf("Time: flipping: %v seconds.", flipEnd.Sub(readEnd).Seconds())
 
     // sort the records by sequence
     sort.Sort(Lexicographically(reads))
     readSort := time.Now()
+    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(flipEnd).Seconds())
 
 	log.Printf("Read %v reads; flipped %v of them.", len(reads), flipped)
-    log.Printf("Time: reading: %v seconds.", readEnd.Sub(readStart).Seconds())
-    log.Printf("Time: flipping: %v seconds.", flipEnd.Sub(readEnd).Seconds())
-    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(flipEnd).Seconds())
     return reads
 
 }
@@ -1079,8 +1082,8 @@ func main() {
 
     startTime := time.Now()
 
-	log.Println("Maximum threads = 8")
-	runtime.GOMAXPROCS(MAX_THREADS)
+	log.Println("Maximum threads = %v", maxThreads)
+	runtime.GOMAXPROCS(maxThreads)
 
 	// parse the command line
 	const (
