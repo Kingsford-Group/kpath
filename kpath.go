@@ -23,7 +23,7 @@ import (
     "strconv"
     "time"
     "math"
-    "unsafe"
+    "runtime/debug"
 
 	"kingsford/arithc"
 	"kingsford/bitio"
@@ -359,7 +359,7 @@ func nextInterval(
 		// if the context doesnt exist, use a simple default interval
 		defaultUsed++
 		//a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
-        a, b, total = intervalForDefault(kidx)
+        a, b, total = intervalForDefault(kidx) //XXX
 		defaultInterval[kidx]++
 
         if updateReference {
@@ -1031,9 +1031,6 @@ func main() {
 	log.Println("Maximum threads = 8")
 	runtime.GOMAXPROCS(8)
 
-    var kkk KmerInfo
-    fmt.Printf("Size = %v", unsafe.Sizeof(kkk))
-
 	// parse the command line
 	const (
 		ENCODE int = 1
@@ -1194,5 +1191,11 @@ func main() {
 
     endTime := time.Now()
     log.Printf("kpath took %v to run.", endTime.Sub(startTime).Seconds())
+
+    var stats debug.GCStats
+    stats.PauseQuantiles = make([]time.Duration, 5)
+    debug.ReadGCStats(&stats)
+    log.Printf("Last GC=%v\nNum GC=%v\nPause for GC=%v\nPauseHistory=%v",
+        stats.LastGC, stats.NumGC, stats.PauseTotal.Seconds(), stats.Pause)
 }
 
