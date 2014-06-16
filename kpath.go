@@ -450,13 +450,13 @@ func readAndFlipReads(
         blockSize := 1 + len(reads) / len(wait)
         log.Printf("Have %v read flippers, each working on %v reads", len(wait), blockSize)
         for i, c := range wait {
-            go func() {
+            go func(i int, c chan int) {
                 log.Printf("Worker %v flipping [%d, %d)...", i, i*blockSize, (i+1)*blockSize)
                 count := flipRange(reads[i*blockSize : (i+1)*blockSize], hash)
                 log.Printf("Worker %v flipped %d reads", i, count)
                 c <- count
                 close(c)
-            }()
+            }(i, c)
         }
 
         // wait for all the workers to finish
@@ -1085,7 +1085,7 @@ func main() {
 
     startTime := time.Now()
 
-	log.Println("Maximum threads = %v", maxThreads)
+	log.Printf("Maximum threads = %v", maxThreads)
 	runtime.GOMAXPROCS(maxThreads)
 
 	// parse the command line
