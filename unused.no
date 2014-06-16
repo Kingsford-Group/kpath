@@ -233,6 +233,23 @@ func readAndFlipReadsOld(readFile string, hash KmerHash, flipReadsOption bool) [
 	return reads
 }
 
+/*
+type Bucket struct {
+    reads []int
+}
+
+func listBuckets(reads []*FastQ) map[Kmer]Bucket {
+    buckets := make(map[Kmer][]int, 1000000)
+
+    // for every read
+    for nr, fq := range reads {
+        // figure out it's head and add the index of this read to that bucket
+        b := stringToKmer(string(rec.Seq[:globalK]))
+        buckets[b].reads = append(buckets[b].reads, nr)
+    }
+    
+}
+*/
 
 /*
 	for curBucket < len(kmers) {

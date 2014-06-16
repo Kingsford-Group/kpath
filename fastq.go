@@ -85,10 +85,15 @@ func ReadFastQ(filename string, out chan<- *FastQ) {
     quals := make([]byte, 0)
     var emptyQuals = make([]byte, 0)
 
-    scanner := bufio.NewScanner(in)
-    for scanner.Scan() {
+    //scanner := bufio.NewScanner(in)
+    reader := bufio.NewReader(in)
+    //for scanner.Scan() {
+    for {
+        line, err := reader.ReadBytes('\n')
+        if err != nil { break }
         // read a line, remove white space
-        r := strings.TrimSpace(strings.ToUpper(scanner.Text()))
+        //r := strings.TrimSpace(strings.ToUpper(scanner.Text()))
+        r := strings.TrimSpace(strings.ToUpper(string(line)))
         if len(r) == 0 { continue }
 
         // depending on state, manage record
@@ -118,7 +123,7 @@ func ReadFastQ(filename string, out chan<- *FastQ) {
             }
         }
     }
-	DIE_ON_ERR(scanner.Err(), "Couldn't read reads file to completion")
+	//DIE_ON_ERR(scanner.Err(), "Couldn't read reads file to completion")
     close(out)
 }
 

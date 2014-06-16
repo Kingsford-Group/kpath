@@ -23,7 +23,6 @@ import (
     "strconv"
     "time"
     "math"
-    "runtime/debug"
 
 	"kingsford/arithc"
 	"kingsford/bitio"
@@ -213,19 +212,25 @@ func readReferenceFile(fastaFile string) []string {
 	out := make([]string, 0, 10000000)
 	cur := make([]string, 0, 100)
 
-	scanner := bufio.NewScanner(in)
-	for scanner.Scan() {
-		line := strings.TrimSpace(strings.ToUpper(scanner.Text()))
-		if len(line) > 0 && line[0] == '>' {
+	//scanner := bufio.NewScanner(in)
+	//for scanner.Scan() {
+		//line := strings.TrimSpace(strings.ToUpper(scanner.Text()))
+    reader := bufio.NewReader(in)
+    for {
+        raw, err := reader.ReadBytes('\n')
+        if err != nil { break } 
+
+		if len(raw) > 0 && raw[0] == byte('>') {
 			if len(cur) > 0 {
 				out = append(out, strings.Join(cur, ""))
 				cur = make([]string, 0, 100)
 			}
-		} else if len(line) > 0 {
+		} else if len(raw) > 0 {
+            line := strings.TrimSpace(strings.ToUpper(string(raw)))
 			cur = append(cur, line)
 		}
 	}
-	DIE_ON_ERR(scanner.Err(), "Couldn't finish reading reference")
+	//DIE_ON_ERR(scanner.Err(), "Couldn't finish reading reference")
 	return out
 }
 
@@ -774,11 +779,14 @@ func readNLocations(nLocFN string) [][]byte {
         ncount := 0
         
         // for every line in the input file
-        scanner := bufio.NewScanner(inZ)
-        for scanner.Scan() {
-
+        //scanner := bufio.NewScanner(inZ)
+        //for scanner.Scan() {
+        reader := bufio.NewReader(inZ)
+        for {
+            line, err := reader.ReadBytes('\n')
+            if err != nil { break }
             // split into the list of integers (as strings)
-            posns := strings.Split(strings.TrimSpace(scanner.Text()), " ")
+            posns := strings.Split(strings.TrimSpace(string(line)), " ")
 
             // if there are any Ns in this read
             if len(posns) > 0  && posns[0] != "" {
@@ -795,7 +803,7 @@ func readNLocations(nLocFN string) [][]byte {
                 locs = append(locs, nil)
             }
         }
-        DIE_ON_ERR(scanner.Err(), "Couldn't finish reading N locations")
+        //DIE_ON_ERR(scanner.Err(), "Couldn't finish reading N locations")
         log.Printf("Read locations for %d Ns.", ncount)
         return locs
     } else {
@@ -1087,11 +1095,13 @@ func main() {
 
 		var err error
 
+        /*
 		if smoothOption {
 			smoothFile, err = os.Create("smoothed.txt")
 			DIE_ON_ERR(err, "Couldn't create smoothed file 'smoothed.txt'")
 			defer smoothFile.Close()
 		}
+        */
 
 		// create the output file
 		outF, err := os.Create(outFile + ".enc")
@@ -1195,10 +1205,12 @@ func main() {
     endTime := time.Now()
     log.Printf("kpath took %v to run.", endTime.Sub(startTime).Seconds())
 
+    /* UNCOMMENT TO DEBUG GARBAGE COLLECTION WITH GO 1.2
     var stats debug.GCStats
     stats.PauseQuantiles = make([]time.Duration, 5)
     debug.ReadGCStats(&stats)
     log.Printf("Last GC=%v\nNum GC=%v\nPause for GC=%v\nPauseHistory=%v",
         stats.LastGC, stats.NumGC, stats.PauseTotal.Seconds(), stats.Pause)
+    */
 }
 
