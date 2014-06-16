@@ -1,6 +1,6 @@
 package main
 
-/* Version June 6, 2014 */
+/* Version June 16, 2014 */
 
 /* TODO:
 
@@ -37,6 +37,7 @@ type Kmer uint32
 
 type KmerCount uint16
 const MAX_OBSERVATION uint32 = (1 << 16) - 1
+const MAX_THREADS int = 10
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -77,7 +78,7 @@ var (
     writeFlippedOption bool = true
     updateReference    bool = true
 
-	cpuProfile         string = "" //"encode.pprof" // set to nonempty to write profile to this file
+	cpuProfile         string = ""  // set to nonempty to write profile to this file
     writeQualOption    bool = false // NYI completely
 )
 
@@ -87,8 +88,7 @@ const (
 	seenThreshold     KmerCount = 2 // before this threshold, increment 1 and treat as unseen
 	observationInc    KmerCount = 2 // once above seenThreshold, increment by this on each observation
 
-	smoothOption    bool = false
-
+	//smoothOption    bool = false
 )
 
 //===================================================================
@@ -212,25 +212,21 @@ func readReferenceFile(fastaFile string) []string {
 	out := make([]string, 0, 10000000)
 	cur := make([]string, 0, 100)
 
-	//scanner := bufio.NewScanner(in)
-	//for scanner.Scan() {
-		//line := strings.TrimSpace(strings.ToUpper(scanner.Text()))
-    reader := bufio.NewReader(in)
-    for {
-        raw, err := reader.ReadBytes('\n')
-        if err != nil { break } 
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := strings.TrimSpace(strings.ToUpper(scanner.Text()))
+        if len(line) == 0 { continue }
 
-		if len(raw) > 0 && raw[0] == byte('>') {
+		if line[0] == byte('>') {
 			if len(cur) > 0 {
 				out = append(out, strings.Join(cur, ""))
 				cur = make([]string, 0, 100)
 			}
-		} else if len(raw) > 0 {
-            line := strings.TrimSpace(strings.ToUpper(string(raw)))
+		} else {
 			cur = append(cur, line)
 		}
 	}
-	//DIE_ON_ERR(scanner.Err(), "Couldn't finish reading reference")
+	DIE_ON_ERR(scanner.Err(), "Couldn't finish reading reference")
 	return out
 }
 
@@ -320,7 +316,8 @@ func intervalFor(
 	return
 }
 
-// XXX
+// intervalForDefault() computes the interval for the given character using the
+// default interval
 func intervalForDefault(letter byte) (a uint64, b uint64, total uint64) {
     letterIdx := int(letter)
     for i := 0; i < len(defaultInterval); i++ {
@@ -404,9 +401,76 @@ func (a Lexicographically) Less(i, j int) bool {
     return false
 }
         
-       // return string(a[i].Seq) < string(a[j].Seq) }
+// flipRange() flips the reads in the given slice if the reverse complement
+// matches the reference better.
+func flipRange(block []*FastQ, hash KmerHash) int {
+    flip := 0
+    for _, fq := range block {
+        n1 := countMatchingObservations(hash, string(fq.Seq))
+        rcr := reverseComplement(string(fq.Seq))
+        n2 := countMatchingObservations(hash, rcr)
 
+        // if they are tied, take the lexigographically smaller one
+        if n2 > n1 || (n2 == n1 && string(rcr) < string(fq.Seq)) {
+            fq.SetReverseComplement(rcr)
+            flip++
+        }
+    }
+    return flip
+}
 
+// readAndFlipReads() reads the reads and reverse complements them if the
+// reverse complement matches the hash better (according to a countMatching*
+// function above). It returns a slice of the reads. "N"s are treated as "A"s.
+// No other characters are transformed and will eventually lead to a panic.
+func readAndFlipReads(
+    readFile string, 
+    hash KmerHash, 
+    flipReadsOption bool,
+) []*FastQ {
+    // read the reads from the file into memory
+    log.Printf("Reading reads...")
+    readStart := time.Now()
+    fq := make(chan*FastQ, 10000000)
+    go ReadFastQ(readFile, fq)
+    reads := make([]*FastQ, 0, 10000000)
+    for rec := range fq {
+        reads = append(reads, rec)
+    }
+    readEnd := time.Now()
+
+    // if enabled, start several threads to flip the reads
+    if flipReadsOption {
+        // start MAX_THREADS-1 workers to flip the read ranges
+        wait := make([]chan int, MAX_THREADS-1)
+        blockSize := 1 + len(reads) / (MAX_THREADS-1)
+        fmt.Printf("Each read flipper working on %v reads", blockSize)
+        for i, c := range wait {
+            go func() {
+                c <- flipRange(reads[i : i + blockSize], hash)
+                close(c)
+            }()
+        }
+
+        // wait for all the workers to finish
+        for _, c := range wait { 
+            flipped += <-c 
+        }
+    }
+    flipEnd := time.Now()
+
+    // sort the records by sequence
+    sort.Sort(Lexicographically(reads))
+    readSort := time.Now()
+
+	log.Printf("Read %v reads; flipped %v of them.", len(reads), flipped)
+    log.Printf("Time: reading: %v seconds.", readEnd.Sub(readStart).Seconds())
+    log.Printf("Time: flipping: %v seconds.", flipEnd.Sub(readEnd).Seconds())
+    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(flipEnd).Seconds())
+    return reads
+
+}
+/*
 // readAndFlipReads() reads the reads and reverse complements them if the
 // reverse complement matches the hash better (according to a countMatching*
 // function above). It returns a slide of the reads. "N"s are treated as "A"s.
@@ -448,24 +512,8 @@ func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*F
     log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(readEnd).Seconds())
     return reads
 }
-
-/*
-type Bucket struct {
-    reads []int
-}
-
-func listBuckets(reads []*FastQ) map[Kmer]Bucket {
-    buckets := make(map[Kmer][]int, 1000000)
-
-    // for every read
-    for nr, fq := range reads {
-        // figure out it's head and add the index of this read to that bucket
-        b := stringToKmer(string(rec.Seq[:globalK]))
-        buckets[b].reads = append(buckets[b].reads, nr)
-    }
-    
-}
 */
+
 
 // listBuckets() processes the reads and creates the bucket list and the list
 // of the bucket sizes and returns them.
@@ -653,7 +701,6 @@ func encodeWithBuckets(
 		close(waitForCounts)
 	}()
 
-
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
 	log.Printf("Encoding reads, each of length %d ...", readLength)
@@ -779,14 +826,10 @@ func readNLocations(nLocFN string) [][]byte {
         ncount := 0
         
         // for every line in the input file
-        //scanner := bufio.NewScanner(inZ)
-        //for scanner.Scan() {
-        reader := bufio.NewReader(inZ)
-        for {
-            line, err := reader.ReadBytes('\n')
-            if err != nil { break }
+        scanner := bufio.NewScanner(inZ)
+        for scanner.Scan() {
             // split into the list of integers (as strings)
-            posns := strings.Split(strings.TrimSpace(string(line)), " ")
+            posns := strings.Split(strings.TrimSpace(scanner.Text()), " ")
 
             // if there are any Ns in this read
             if len(posns) > 0  && posns[0] != "" {
@@ -803,7 +846,7 @@ func readNLocations(nLocFN string) [][]byte {
                 locs = append(locs, nil)
             }
         }
-        //DIE_ON_ERR(scanner.Err(), "Couldn't finish reading N locations")
+        DIE_ON_ERR(scanner.Err(), "Couldn't finish reading N locations")
         log.Printf("Read locations for %d Ns.", ncount)
         return locs
     } else {
@@ -1023,7 +1066,7 @@ func writeGlobalOptions() {
 	log.Printf("Option: observationWeight = %d", observationWeight)
 	log.Printf("Option: seenThreshold = %d", seenThreshold)
 	log.Printf("Option: observationInc = %d", observationInc)
-	log.Printf("Option: smoothOption = %v", smoothOption)
+	//log.Printf("Option: smoothOption = %v", smoothOption)
 	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
     log.Printf("Option: dupsOption = %v", dupsOption)
     log.Printf("Option: updateReference = %v", updateReference)
@@ -1032,12 +1075,12 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 6-15-14")
+	log.Println("Starting kpath version 6-16-14")
 
     startTime := time.Now()
 
 	log.Println("Maximum threads = 8")
-	runtime.GOMAXPROCS(8)
+	runtime.GOMAXPROCS(MAX_THREADS)
 
 	// parse the command line
 	const (
@@ -1079,7 +1122,6 @@ func main() {
 		hash = countKmersInReference(globalK, refFile)
 		log.Printf("There are %v unique %v-mers in the reference\n",
 			len(hash), globalK)
-		//capTransitionCounts(hash, 2) XXX
         log.Printf("Time: Took %v seconds to read reference.", time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
 	}()
@@ -1093,9 +1135,8 @@ func main() {
 		log.Printf("Writing to %s, %s, %s", 
             outFile+".enc", outFile+".bittree", outFile+".counts")
 
-		var err error
-
         /*
+		var err error
 		if smoothOption {
 			smoothFile, err = os.Create("smoothed.txt")
 			DIE_ON_ERR(err, "Couldn't create smoothed file 'smoothed.txt'")
@@ -1121,7 +1162,7 @@ func main() {
 		// encode reads
 		<-waitForReference
 		n := encodeWithBuckets(readFile, outFile, hash, encoder)
-		log.Printf("Smoothed (changed) %v characters", smoothed)
+		//log.Printf("Smoothed (changed) %v characters", smoothed)
 		log.Printf("Reads Flipped: %v", flipped)
 		log.Printf("Encoded %v reads.", n)
 
