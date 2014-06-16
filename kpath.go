@@ -1024,7 +1024,7 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 6-11-14")
+	log.Println("Starting kpath version 6-15-14")
 
     startTime := time.Now()
 
@@ -1098,7 +1098,10 @@ func main() {
 		DIE_ON_ERR(err, "Couldn't create output file %s", outFile)
 		defer outF.Close()
 
-		writer := bitio.NewWriter(outF)
+        outBuf := bufio.NewWriter(outF)
+        defer outBuf.Flush()
+
+		writer := bitio.NewWriter(outBuf)
 		defer writer.Close()
 
 		// create encoder
