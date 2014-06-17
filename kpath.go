@@ -65,7 +65,7 @@ var (
 	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
     defaultIntervalSum uint64 = 4*2
 
-	defaultUsed   int
+	//defaultUsed   int
 	contextExists int
 	smoothed      int
 	flipped       int
@@ -87,7 +87,7 @@ const (
 	pseudoCount       uint64 = 1
 	observationWeight uint64 = 10
 	seenThreshold     KmerCount = 2 // before this threshold, increment 1 and treat as unseen
-	observationInc    KmerCount = 2 // once above seenThreshold, increment by this on each observation
+	observationInc    KmerCount = 1 // once above seenThreshold, increment by this on each observation
 
 	//smoothOption    bool = false
 )
@@ -248,7 +248,7 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 			info := hash[contextMer]
 			next := acgt(s[i+k])
             //info.next[next] += observationInc XXX
-            info.next[next] = observationInc
+            info.next[next] = 2//*observationInc
             hash[contextMer] = info
 
 			contextMer = shiftKmer(contextMer, next)
@@ -278,6 +278,14 @@ func capTransitionCounts(hash KmerHash, max int) {
 // distribution weights according to the function for real contexts. If the
 // count is too small, it returns the pseudocount; if the count is big enough
 // it returns observationWeight * the distribution value.
+func contextWeight(charIdx int, dist [len(ALPHA)]KmerCount) uint64 {
+	if dist[charIdx] >= seenThreshold {
+        return observationWeight * uint64(dist[charIdx])
+    } else {
+        return pseudoCount
+    }
+}
+/*
 func contextWeight(charIdx int, dist [len(ALPHA)]KmerCount) (w uint64) {
 	if dist[charIdx] >= seenThreshold {
 		w = observationWeight * uint64(dist[charIdx]) / uint64(observationInc)
@@ -286,6 +294,7 @@ func contextWeight(charIdx int, dist [len(ALPHA)]KmerCount) (w uint64) {
 	w = pseudoCount
 	return
 }
+*/
 
 // defaultWeight() is a weight transformation function for the default
 // distribution. It returns the weight unchanged.
@@ -333,7 +342,6 @@ func intervalForDefault(letter byte) (a uint64, b uint64, total uint64) {
     }
     return
 }
-    
 
 // nextInterval() computes the interval for the given context and updates the
 // default distribution and context distributions as required.
@@ -360,7 +368,7 @@ func nextInterval(
         }
 	} else {
 		// if the context doesnt exist, use a simple default interval
-		defaultUsed++
+		//defaultUsed++
 		//a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
         a, b, total = intervalForDefault(kidx) //XXX
 		defaultInterval[kidx]++
@@ -568,7 +576,7 @@ func writeCounts(f io.Writer, readlen int, counts []int) {
 	for _, c := range counts {
 		fmt.Fprintf(f, "%d ", c)
 	}
-	log.Printf("Done; write %d counts.", len(counts))
+	log.Printf("Done; wrote %d counts.", len(counts))
 }
 
 
@@ -1268,7 +1276,7 @@ func main() {
 		decodeReads(kmers, counts, flipped, NLocations, hash, readlen, outF, decoder)
 	}
 	log.Printf("Default interval used %v times and context used %v times",
-		defaultUsed, contextExists)
+		defaultIntervalSum, contextExists)
 
     endTime := time.Now()
     log.Printf("kpath took %v to run.", endTime.Sub(startTime).Seconds())
