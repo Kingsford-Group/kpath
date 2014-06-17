@@ -24,6 +24,53 @@ x12. Add commandline option to turn off flipping
 x3. Write out two-bit length as a log message
 
 */
+
+/*
+// readAndFlipReads() reads the reads and reverse complements them if the
+// reverse complement matches the hash better (according to a countMatching*
+// function above). It returns a slide of the reads. "N"s are treated as "A"s.
+// No other characters are transformed and will eventually lead to a panic.
+func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*FastQ {
+    // start the reading routine
+    log.Printf("Reading reads...")
+    readStart := time.Now()
+    fq := make(chan *FastQ, 10000000)
+    go ReadFastQ(readFile, fq)
+
+    reads := make([]*FastQ, 0, 10000000)
+
+    // for every record
+    for rec := range fq {
+        // possibly flip it
+        if flipReadsOption {
+            n1 := countMatchingObservations(hash, string(rec.Seq))
+            rcr := reverseComplement(string(rec.Seq))
+            n2 := countMatchingObservations(hash, rcr)
+
+			// if they are tied, take the lexigographically smaller one
+			if n2 > n1 || (n2 == n1 && string(rcr) < string(rec.Seq)) {
+				rec.SetReverseComplement(rcr)
+				flipped++
+			}
+        }
+        // save it in our read list
+        reads = append(reads, rec)
+    }
+    readEnd := time.Now()
+
+    // sort the records by sequence
+    sort.Sort(Lexicographically(reads))
+    readSort := time.Now()
+
+	log.Printf("Read %v reads; flipped %v of them.", len(reads), flipped)
+    log.Printf("Time: reading and flipping: %v seconds.", readEnd.Sub(readStart).Seconds())
+    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(readEnd).Seconds())
+    return reads
+}
+*/
+
+
+
 package main
 
 import (

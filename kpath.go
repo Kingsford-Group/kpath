@@ -1,12 +1,7 @@
 package main
 
-/* Version June 16, 2014 */
+/* Version June 17, 2014 */
 
-/* TODO:
-
-4. conserve memory with a DNAString type (?)
-5. add some more unit tests
-*/
 
 import (
 	"bufio"
@@ -35,7 +30,11 @@ import (
 // A Kmer represents a kmer of size <= 16.
 type Kmer uint32
 
+// A KmerCount holds the counts for the # of times a transition is observed
 type KmerCount uint16
+
+// MAX_OBERSERVATION should be the largest value that can be stored in a
+// KmerCount
 const MAX_OBSERVATION uint32 = (1 << 16) - 1
 
 // A KmerInfo contains the information about a given kmer context.
@@ -65,7 +64,6 @@ var (
 	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
     defaultIntervalSum uint64 = 4*2
 
-	//defaultUsed   int
 	contextExists int
 	smoothed      int
 	flipped       int
@@ -285,16 +283,6 @@ func contextWeight(charIdx int, dist [len(ALPHA)]KmerCount) uint64 {
         return pseudoCount
     }
 }
-/*
-func contextWeight(charIdx int, dist [len(ALPHA)]KmerCount) (w uint64) {
-	if dist[charIdx] >= seenThreshold {
-		w = observationWeight * uint64(dist[charIdx]) / uint64(observationInc)
-		return
-	}
-	w = pseudoCount
-	return
-}
-*/
 
 // defaultWeight() is a weight transformation function for the default
 // distribution. It returns the weight unchanged.
@@ -368,9 +356,7 @@ func nextInterval(
         }
 	} else {
 		// if the context doesnt exist, use a simple default interval
-		//defaultUsed++
-		//a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
-        a, b, total = intervalForDefault(kidx) //XXX
+        a, b, total = intervalForDefault(kidx) 
 		defaultInterval[kidx]++
         defaultIntervalSum++
 
@@ -492,50 +478,6 @@ func readAndFlipReads(
     return reads
 
 }
-/*
-// readAndFlipReads() reads the reads and reverse complements them if the
-// reverse complement matches the hash better (according to a countMatching*
-// function above). It returns a slide of the reads. "N"s are treated as "A"s.
-// No other characters are transformed and will eventually lead to a panic.
-func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*FastQ {
-    // start the reading routine
-    log.Printf("Reading reads...")
-    readStart := time.Now()
-    fq := make(chan *FastQ, 10000000)
-    go ReadFastQ(readFile, fq)
-
-    reads := make([]*FastQ, 0, 10000000)
-
-    // for every record
-    for rec := range fq {
-        // possibly flip it
-        if flipReadsOption {
-            n1 := countMatchingObservations(hash, string(rec.Seq))
-            rcr := reverseComplement(string(rec.Seq))
-            n2 := countMatchingObservations(hash, rcr)
-
-			// if they are tied, take the lexigographically smaller one
-			if n2 > n1 || (n2 == n1 && string(rcr) < string(rec.Seq)) {
-				rec.SetReverseComplement(rcr)
-				flipped++
-			}
-        }
-        // save it in our read list
-        reads = append(reads, rec)
-    }
-    readEnd := time.Now()
-
-    // sort the records by sequence
-    sort.Sort(Lexicographically(reads))
-    readSort := time.Now()
-
-	log.Printf("Read %v reads; flipped %v of them.", len(reads), flipped)
-    log.Printf("Time: reading and flipping: %v seconds.", readEnd.Sub(readStart).Seconds())
-    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(readEnd).Seconds())
-    return reads
-}
-*/
-
 
 // listBuckets() processes the reads and creates the bucket list and the list
 // of the bucket sizes and returns them.
@@ -623,7 +565,6 @@ func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder 
 		contextMer = shiftKmer(contextMer, char)
 	}
 }
-
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
 // and their counts, and then encodes each read.
@@ -731,11 +672,11 @@ func encodeWithBuckets(
         return
 	}()
 
-    fmt.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
+    log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
+
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
 	log.Printf("Encoding reads, each of length %d ...", readLength)
-	//waitForReads := make(chan struct{})
 
     curRead := 0
     for i, c := range counts {
@@ -762,7 +703,6 @@ func encodeWithBuckets(
     <-waitForNs
     <-waitForFlipped
 
-	//<-waitForReads
 	log.Printf("done. Took %v seconds to encode the tails.", time.Now().Sub(encodeStart).Seconds())
 	return
 }
@@ -1092,7 +1032,6 @@ func writeGlobalOptions() {
 	log.Printf("Option: observationWeight = %d", observationWeight)
 	log.Printf("Option: seenThreshold = %d", seenThreshold)
 	log.Printf("Option: observationInc = %d", observationInc)
-	//log.Printf("Option: smoothOption = %v", smoothOption)
 	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
     log.Printf("Option: dupsOption = %v", dupsOption)
     log.Printf("Option: updateReference = %v", updateReference)
@@ -1101,7 +1040,7 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 6-16-14")
+	log.Println("Starting kpath version 0.6 (6-17-14)")
 
     startTime := time.Now()
 
@@ -1189,7 +1128,6 @@ func main() {
 		// encode reads
 		<-waitForReference
 		n := encodeWithBuckets(readFile, outFile, hash, encoder)
-		//log.Printf("Smoothed (changed) %v characters", smoothed)
 		log.Printf("Reads Flipped: %v", flipped)
 		log.Printf("Encoded %v reads.", n)
 
