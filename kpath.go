@@ -610,9 +610,9 @@ func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder 
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
 		a, b, total := nextInterval(hash, contextMer, char)
-		err := coder.Encode(a, b, total)
-		DIE_ON_ERR(err, "Error encoding read: %s", r)
-		contextMer = shiftKmer(contextMer, byte(char))
+		coder.Encode(a, b, total)
+		//DIE_ON_ERR(err, "Error encoding read: %s", r)
+		contextMer = shiftKmer(contextMer, char)
 	}
 }
 
@@ -722,11 +722,6 @@ func encodeWithBuckets(
         runtime.Goexit()
         return
 	}()
-	// Wait for each of the coders to finish
-	<-waitForBuckets
-	<-waitForCounts
-    <-waitForNs
-    <-waitForFlipped
 
     fmt.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
 	/*** The main work to encode the read tails ***/
@@ -752,6 +747,12 @@ func encodeWithBuckets(
             n++
         }
     }
+
+	// Wait for each of the coders to finish
+	<-waitForBuckets
+	<-waitForCounts
+    <-waitForNs
+    <-waitForFlipped
 
 	//<-waitForReads
 	log.Printf("done. Took %v seconds to encode the tails.", time.Now().Sub(encodeStart).Seconds())
