@@ -460,6 +460,7 @@ func readAndFlipReads(
                 log.Printf("Worker %v flipped %d reads", i, count)
                 c <- count
                 close(c)
+                runtime.Goexit()
             }(i, c)
         }
 
@@ -646,6 +647,7 @@ func encodeWithBuckets(
         go func() {
             writeFlipped(flippedBits, reads)
             close(waitForFlipped)
+            runtime.Goexit()
         }()
     } else {
         close(waitForFlipped)
@@ -665,6 +667,7 @@ func encodeWithBuckets(
         go func() {
             writeNLocations(outNsZ, reads)
             close(waitForNs)
+            runtime.Goexit()
         }()
     } else {
         close(waitForNs)
@@ -692,6 +695,7 @@ func encodeWithBuckets(
 	go func() {
 		encodeKmersToFile(buckets, writer)
 		close(waitForBuckets)
+        runtime.Goexit()
 	}()
 
 	// write out the counts
@@ -709,6 +713,7 @@ func encodeWithBuckets(
 	go func() {
 		writeCounts(countZ, readLength, counts)
 		close(waitForCounts)
+        runtime.Goexit()
 	}()
 
 	/*** The main work to encode the read tails ***/
@@ -1128,6 +1133,7 @@ func main() {
 			len(hash), globalK)
         log.Printf("Time: Took %v seconds to read reference.", time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
+        runtime.Goexit()
 	}()
 
 	writeGlobalOptions()
@@ -1187,6 +1193,7 @@ func main() {
 			kmers = decodeKmersFromFile(headsFN, globalK)
 			sort.Strings(kmers)
 			close(waitForBuckets)
+            runtime.Goexit()
 		}()
 
 		// read the bucket counts
@@ -1196,6 +1203,7 @@ func main() {
 		go func() {
 			counts, readlen = readBucketCounts(countsFN)
 			close(waitForCounts)
+            runtime.Goexit()
 		}()
 
         // read the flipped bits --- flipped by be 0-length if no file could be
@@ -1206,6 +1214,7 @@ func main() {
         go func() {
             flipped = readFlipped(readFile + ".flipped")
             close(waitForFlipped)
+            runtime.Goexit()
         }()
 
         // read the NLocations, which might be 0-length if no file could be
@@ -1215,6 +1224,7 @@ func main() {
         go func() {
             NLocations = readNLocations(readFile + ".ns")
             close(waitForNLocations)
+            runtime.Goexit()
         }()
 
 		// open encoded read file
