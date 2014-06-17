@@ -715,6 +715,11 @@ func encodeWithBuckets(
 		close(waitForCounts)
         runtime.Goexit()
 	}()
+	// Wait for each of the coders to finish
+	<-waitForBuckets
+	<-waitForCounts
+    <-waitForNs
+    <-waitForFlipped
 
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
@@ -740,11 +745,6 @@ func encodeWithBuckets(
         }
     }
 
-	// Wait for each of the coders to finish
-	<-waitForBuckets
-	<-waitForCounts
-    <-waitForNs
-    <-waitForFlipped
 	//<-waitForReads
 	log.Printf("done. Took %v seconds to encode the tails.", time.Now().Sub(encodeStart).Seconds())
 	return
