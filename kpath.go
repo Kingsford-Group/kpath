@@ -714,35 +714,33 @@ func encodeWithBuckets(
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
 	log.Printf("Encoding reads, each of length %d ...", readLength)
-	waitForReads := make(chan struct{})
-	go func() {
-        curRead := 0
-        for i, c := range counts {
-            bucketMer := stringToKmer(buckets[i])
-            if c > 0 {
-                // write out the given number of reads
-                for j := 0; j < c; j++ {
-                    encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
-                    curRead++
-                    n++
-                }
-            } else {
-                // all the reads in this bucket are the same, so just write one
-                // and skip past the rest.
+	//waitForReads := make(chan struct{})
+
+    curRead := 0
+    for i, c := range counts {
+        bucketMer := stringToKmer(buckets[i])
+        if c > 0 {
+            // write out the given number of reads
+            for j := 0; j < c; j++ {
                 encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
-                curRead += AbsInt(c)
+                curRead++
                 n++
             }
-		}
-		close(waitForReads)
-	}()
+        } else {
+            // all the reads in this bucket are the same, so just write one
+            // and skip past the rest.
+            encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
+            curRead += AbsInt(c)
+            n++
+        }
+    }
 
 	// Wait for each of the coders to finish
 	<-waitForBuckets
 	<-waitForCounts
     <-waitForNs
     <-waitForFlipped
-	<-waitForReads
+	//<-waitForReads
 	log.Printf("done. Took %v seconds to encode the tails.", time.Now().Sub(encodeStart).Seconds())
 	return
 }
