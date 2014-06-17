@@ -63,6 +63,7 @@ var (
 	shiftKmerMask Kmer
 
 	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
+    defaultIntervalSum uint64 = 4*2
 
 	defaultUsed   int
 	contextExists int
@@ -363,6 +364,7 @@ func nextInterval(
 		//a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
         a, b, total = intervalForDefault(kidx) //XXX
 		defaultInterval[kidx]++
+        defaultIntervalSum++
 
         if updateReference {
             // add this to the context now
@@ -920,11 +922,7 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 	if info, ok := hash[context]; ok {
 		return sumDist(info.next, contextWeight)
 	} else {
-        s := uint64(0)
-        for i := 0; i < len(defaultInterval); i++ {
-            s += uint64(defaultInterval[i])
-        }
-        return s
+        return defaultIntervalSum
 		//return sumDist(defaultInterval, defaultWeight)
 	}
 }
