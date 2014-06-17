@@ -457,16 +457,19 @@ func readAndFlipReads(
                 if end > len(reads) { end = len(reads) }
                 log.Printf("Worker %v flipping [%d, %d)...", i, i*blockSize, end)
                 count := flipRange(reads[i*blockSize : end], hash)
-                log.Printf("Worker %v flipped %d reads", i, count)
                 c <- count
                 close(c)
+                log.Printf("Worker %v flipped %d reads", i, count)
                 runtime.Goexit()
+                return
             }(i, c)
         }
 
-        // wait for all the workers to finish
+        // wait for all the workers to finish and sum up their 
         for _, c := range wait { 
-            flipped += <-c 
+            for f := range c {
+                flipped += f
+            }
         }
     }
     flipEnd := time.Now()
@@ -648,6 +651,7 @@ func encodeWithBuckets(
             writeFlipped(flippedBits, reads)
             close(waitForFlipped)
             runtime.Goexit()
+            return
         }()
     } else {
         close(waitForFlipped)
@@ -668,6 +672,7 @@ func encodeWithBuckets(
             writeNLocations(outNsZ, reads)
             close(waitForNs)
             runtime.Goexit()
+            return
         }()
     } else {
         close(waitForNs)
@@ -696,6 +701,7 @@ func encodeWithBuckets(
 		encodeKmersToFile(buckets, writer)
 		close(waitForBuckets)
         runtime.Goexit()
+        return
 	}()
 
 	// write out the counts
@@ -714,6 +720,7 @@ func encodeWithBuckets(
 		writeCounts(countZ, readLength, counts)
 		close(waitForCounts)
         runtime.Goexit()
+        return
 	}()
 	// Wait for each of the coders to finish
 	<-waitForBuckets
@@ -721,6 +728,7 @@ func encodeWithBuckets(
     <-waitForNs
     <-waitForFlipped
 
+    fmt.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
 	log.Printf("Encoding reads, each of length %d ...", readLength)
@@ -1133,7 +1141,7 @@ func main() {
 			len(hash), globalK)
         log.Printf("Time: Took %v seconds to read reference.", time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
-        runtime.Goexit()
+        return
 	}()
 
 	writeGlobalOptions()
@@ -1194,6 +1202,7 @@ func main() {
 			sort.Strings(kmers)
 			close(waitForBuckets)
             runtime.Goexit()
+            return
 		}()
 
 		// read the bucket counts
@@ -1204,6 +1213,7 @@ func main() {
 			counts, readlen = readBucketCounts(countsFN)
 			close(waitForCounts)
             runtime.Goexit()
+            return
 		}()
 
         // read the flipped bits --- flipped by be 0-length if no file could be
@@ -1215,6 +1225,7 @@ func main() {
             flipped = readFlipped(readFile + ".flipped")
             close(waitForFlipped)
             runtime.Goexit()
+            return
         }()
 
         // read the NLocations, which might be 0-length if no file could be
@@ -1225,6 +1236,7 @@ func main() {
             NLocations = readNLocations(readFile + ".ns")
             close(waitForNLocations)
             runtime.Goexit()
+            return
         }()
 
 		// open encoded read file
