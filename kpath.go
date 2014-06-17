@@ -1167,8 +1167,8 @@ func main() {
 		DIE_ON_ERR(err, "Couldn't create output file %s", outFile)
 		defer outF.Close()
 
-        //outBuf := bufio.NewWriter(outF)
-        //defer outBuf.Flush()
+        outBuf := bufio.NewWriterSize(outF, 200000000)
+        defer outBuf.Flush()
 
 		writer := bitio.NewWriter(outF)
 		defer writer.Close()
