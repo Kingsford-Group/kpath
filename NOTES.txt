@@ -17,3 +17,7 @@
 2. enocoding with 16 bit version, decoding with 32-bit version produces the exact same problem
 3. encoding / decoding with the 16-bit version using the first 11 million reads gives the same problem for the last few reads (**)
 4. encoding with 32 bit field gives exactly same result as encoding with 16 bit field
+
+5. VERSION 12a1da4 works for both encoding and decoding. This is the new baseline
+
+
