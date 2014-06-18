@@ -911,7 +911,7 @@ func decodeSingleRead(
     for i := 0; i < tailLen; i++ {
         // decode next symbol
         symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
-        DIE_ON_ERR(err, "Fatal error decoding!")
+        DIE_ON_ERR(err, "Fatal error decoding! R")
         b := byte(symb)
 
         // write it out
@@ -1017,7 +1017,8 @@ func decodeReads(
 func DIE_ON_ERR(err error, msg string, args ...interface{}) {
 	if err != nil {
 		log.Printf("Error: "+msg, args...)
-		log.Fatalln(err)
+		log.Printf("%v", err)
+        panic(err)
 	}
 }
 
