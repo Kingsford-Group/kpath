@@ -1118,7 +1118,7 @@ func main() {
         outBuf := bufio.NewWriterSize(outF, 200000000)
         defer outBuf.Flush()
 
-		writer := bitio.NewWriter(outF)
+		writer := bitio.NewWriter(outBuf)
 		defer writer.Close()
 
 		// create encoder
