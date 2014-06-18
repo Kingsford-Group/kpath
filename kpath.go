@@ -734,12 +734,20 @@ func readBucketCounts(countsFN string) ([]int, int) {
 
 	counts := make([]int, 0)
 	err = nil
+    sum := 0
+    dupBucketCount := 0
 	for x := 1; err == nil && x > 0; {
 		x, err = fmt.Fscanf(c, "%d", &n)
 		if x > 0 && err == nil {
+            sum += AbsInt(n)
+            if n < 0 {
+                dupBucketCount++
+            }
 			counts = append(counts, n)
 		}
 	}
+    log.Printf("Number of uniform buckets = %d\n", dupBucketCount)
+    log.Printf("Total counts = %d\n", sum)
 	log.Printf("done; read %d counts", len(counts))
 	return counts, readlen
 }
