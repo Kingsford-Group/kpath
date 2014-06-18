@@ -557,13 +557,15 @@ func writeFlipped(out *bitio.Writer, reads []*FastQ) {
 // for initial part, and arithmetic encoding for the rest.
 func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
+    bwStart := arithc.BitsWritten
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
 		a, b, total := nextInterval(hash, contextMer, char)
-		coder.Encode(a, b, total)
-		//DIE_ON_ERR(err, "Error encoding read: %s", r)
+        err := coder.Encode(a, b, total)
+		DIE_ON_ERR(err, "Error encoding read: %s", r)
 		contextMer = shiftKmer(contextMer, char)
 	}
+    fmt.Printf("W %d\n", arithc.BitsWritten - bwStart)
 }
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
@@ -673,6 +675,13 @@ func encodeWithBuckets(
 	}()
 
     log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
+
+    debugReads, err := os.Create(outBaseName + ".reads")
+    DIE_ON_ERR(err, "Couldnt' create debug file.")
+    defer debugReads.Close()
+    for i := range reads {
+        fmt.Fprintln(debugReads, string(reads[i].Seq))
+    }
 
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
@@ -1128,10 +1137,10 @@ func main() {
 		DIE_ON_ERR(err, "Couldn't create output file %s", outFile)
 		defer outF.Close()
 
-        outBuf := bufio.NewWriterSize(outF, 200000000)
-        defer outBuf.Flush()
+        //outBuf := bufio.NewWriterSize(outF, 200000000)
+        //defer outBuf.Flush()
 
-		writer := bitio.NewWriter(outBuf)
+		writer := bitio.NewWriter(outF)
 		defer writer.Close()
 
 		// create encoder
