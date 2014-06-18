@@ -65,7 +65,7 @@ var (
     defaultIntervalSum uint64 = 4*2
 
 	contextExists int
-	smoothed      int
+	//smoothed      int
 	flipped       int
 )
 
@@ -844,12 +844,12 @@ func dart(
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
 }
 
-func dartDefault(target uint64) (uint64, uint64, uint64) {
-    sum := uint64(0)
+func dartDefault(target uint32) (uint64, uint64, uint64) {
+    sum := uint32(0)
     for i, w := range defaultInterval {
-        sum += uint64(w)
+        sum += uint32(w)
         if target < sum {
-            return sum - uint64(w), sum, uint64(i)
+            return uint64(sum - w), uint64(sum), uint64(i)
         }
     }
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
@@ -862,7 +862,7 @@ func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
 		return dart(info.next, uint32(t), contextWeight)
 	} else {
 		//return dart(defaultInterval, uint32(t), defaultWeight)
-		return dartDefault(t)
+		return dartDefault(uint32(t))
 	}
 }
 
@@ -973,6 +973,7 @@ func decodeReads(
     // for every bucket
     for curBucket, c := range counts {
         contextMer := stringToKmer(kmers[curBucket])
+        fmt.Printf("Bucket: %v %d\n", curBucket, c)
 
         // if bucket is a uniform bucket, write out |c| copies of the decoded
         // string
