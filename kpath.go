@@ -973,7 +973,7 @@ func decodeReads(
     // for every bucket
     for curBucket, c := range counts {
         contextMer := stringToKmer(kmers[curBucket])
-        fmt.Printf("B %v %d\n", kmers[curBucket], c)
+        //fmt.Printf("B %v %d\n", kmers[curBucket], c)
 
         // if bucket is a uniform bucket, write out |c| copies of the decoded
         // string
