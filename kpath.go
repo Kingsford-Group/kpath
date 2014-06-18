@@ -31,7 +31,7 @@ import (
 type Kmer uint32
 
 // A KmerCount holds the counts for the # of times a transition is observed
-type KmerCount uint16
+type KmerCount uint32
 
 // MAX_OBERSERVATION should be the largest value that can be stored in a
 // KmerCount
@@ -61,7 +61,8 @@ var (
 	globalK       int
 	shiftKmerMask Kmer
 
-	defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
+	//defaultInterval   [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2} ZZZ
+	defaultInterval   [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
     defaultIntervalSum uint64 = 4*2
 
 	contextExists int
@@ -344,11 +345,13 @@ func nextInterval(
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
         if updateReference {
-            prevVal := info.next[kidx]
+            if info.next[kidx] >= seenThreshold {
+                info.next[kidx] += observationInc
+            /*prevVal := info.next[kidx] ZZZ
             if prevVal >= seenThreshold { 
                 if uint32(prevVal) + uint32(observationInc) < MAX_OBSERVATION {
                     info.next[kidx] += observationInc
-                }
+                } */
             } else {
                 info.next[kidx]++
             }
@@ -356,7 +359,8 @@ func nextInterval(
         }
 	} else {
 		// if the context doesnt exist, use a simple default interval
-        a, b, total = intervalForDefault(kidx) 
+        //a, b, total = intervalForDefault(kidx) ZZZ
+        a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
 		defaultInterval[kidx]++
         defaultIntervalSum++
 
@@ -557,7 +561,7 @@ func writeFlipped(out *bitio.Writer, reads []*FastQ) {
 // for initial part, and arithmetic encoding for the rest.
 func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
-    bwStart := arithc.BitsWritten
+    //bwStart := arithc.BitsWritten
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
 		a, b, total := nextInterval(hash, contextMer, char)
@@ -565,7 +569,7 @@ func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder 
 		DIE_ON_ERR(err, "Error encoding read: %s", r)
 		contextMer = shiftKmer(contextMer, char)
 	}
-    fmt.Printf("W %d\n", arithc.BitsWritten - bwStart)
+    //fmt.Printf("W %d\n", arithc.BitsWritten - bwStart)
 }
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
@@ -861,6 +865,7 @@ func dart(
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
 }
 
+/*
 func dartDefault(target uint32) (uint64, uint64, uint64) {
     sum := uint32(0)
     for i, w := range defaultInterval {
@@ -870,7 +875,7 @@ func dartDefault(target uint32) (uint64, uint64, uint64) {
         }
     }
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
-}
+}*/
 
 // lookup() is called by arithc.Decoder to find an interval that contains the
 // given value t.
@@ -878,8 +883,8 @@ func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
 	if info, ok := hash[context]; ok {
 		return dart(info.next, uint32(t), contextWeight)
 	} else {
-		//return dart(defaultInterval, uint32(t), defaultWeight)
-		return dartDefault(uint32(t))
+		return dart(defaultInterval, uint32(t), defaultWeight) //ZZZ
+		//return dartDefault(uint32(t))
 	}
 }
 
@@ -899,8 +904,8 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 	if info, ok := hash[context]; ok {
 		return sumDist(info.next, contextWeight)
 	} else {
-        return defaultIntervalSum
-		//return sumDist(defaultInterval, defaultWeight)
+        //return defaultIntervalSum
+		return sumDist(defaultInterval, defaultWeight) // ZZZ
 	}
 }
 

@@ -9,3 +9,11 @@
 - using bufio was somewhat slower than not
 - Scanner vs. ReadBytes made little difference: Scanner may be slightly faster
 - 
+
+
+---
+
+1. encoding / decoding with 16-bit version => 11 million correct reads, and an error at a string of Ts
+2. enocoding with 16 bit version, decoding with 32-bit version produces the exact same problem
+3. encoding / decoding with the 16-bit version using the first 11 million reads gives the same problem for the last few reads (**)
+4. encoding with 32 bit field gives exactly same result as encoding with 16 bit field
