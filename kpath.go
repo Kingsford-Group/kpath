@@ -978,6 +978,12 @@ func decodeReads(
     tailLen := readLen-len(kmers[0])
     tailBuf := make([]byte, tailLen)
 
+	defer func() {
+        buf.Flush()
+        log.Printf("Added back %d Ns to the reads.", ncount)
+        log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
+    }()
+
     // for every bucket
     for curBucket, c := range counts {
         contextMer := stringToKmer(kmers[curBucket])
@@ -1000,9 +1006,6 @@ func decodeReads(
             }
         }
     }
-	buf.Flush()
-	log.Printf("Added back %d Ns to the reads.", ncount)
-	log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
 }
 
 //===================================================================
@@ -1200,8 +1203,10 @@ func main() {
 		DIE_ON_ERR(err, "Can't open encoded read file %s", tailsFN)
 		defer encIn.Close()
 
+        readerBuf := bufio.NewReader(encIn)
+
 		// create a bit reader wrapper around it
-		reader := bitio.NewReader(bufio.NewReader(encIn))
+		reader := bitio.NewReader(readerBuf)
 		defer reader.Close()
 
 		// create a decoder around it
