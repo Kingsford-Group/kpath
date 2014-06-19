@@ -17,6 +17,7 @@ x write reads to temp file to save memory
 x go vet
 x .gitignore
 
+- fix last bucket bug (might not be negated)
 - refactor to put bitio and arithc in subpackages
 
 - Go 1.3
@@ -464,7 +465,8 @@ func readAndFlipReads(
 			wait[i] = make(chan int)
 		}
 		blockSize := 1 + len(reads)/len(wait)
-		log.Printf("Have %v read flippers, each working on %v reads", len(wait), blockSize)
+		log.Printf("Have %v read flippers, each working on %v reads", 
+            len(wait), blockSize)
 		for i, c := range wait {
 			go func(i int, c chan int) {
 				end := (i + 1) * blockSize
@@ -691,7 +693,7 @@ func preprocessWithBuckets(
 	}()
 
     // create a temp file containing the processed reads
-    processedFile, err := ioutil.TempFile("", "kpath-encode-" + outBaseName)
+    processedFile, err := ioutil.TempFile("", "kpath-encode-" + outBaseName + "-")
     DIE_ON_ERR(err, "Couldn't create temporary file in %s", os.TempDir())
     md5Hash := md5.New()
     waitForTemp := make(chan struct{})
@@ -742,9 +744,11 @@ func encodeReadsFromTempFile(
 	for i, c := range counts {
 		bucketMer := stringToKmer(buckets[i])
 		if c > 0 {
+            log.Printf("B %s %d %d", buckets[i], i, c)
 			// write out the given number of reads
 			for j := 0; j < c; j++ {
                 r, err := buf.ReadString('\n')
+                log.Printf("Q %s", r)
                 DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
                 if r[:globalK] != buckets[i] {
                     log.Fatalf("Read doesn't match bucket %s %s", buckets[i], r)
