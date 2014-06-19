@@ -35,7 +35,7 @@ type KmerCount uint32
 
 // MAX_OBERSERVATION should be the largest value that can be stored in a
 // KmerCount
-const MAX_OBSERVATION uint64 = math.MaxUint16
+const MAX_OBSERVATION uint64 = math.MaxUint32
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -86,7 +86,7 @@ const (
 	pseudoCount       uint64 = 1
 	observationWeight uint64 = 10
 	seenThreshold     KmerCount = 2 // before this threshold, increment 1 and treat as unseen
-	observationInc    KmerCount = 1 // once above seenThreshold, increment by this on each observation
+	//observationInc    KmerCount = 1 // once above seenThreshold, increment by this on each observation
 
 	//smoothOption    bool = false
 )
@@ -1062,7 +1062,8 @@ func writeGlobalOptions() {
 	log.Printf("Option: psudeoCount = %d", pseudoCount)
 	log.Printf("Option: observationWeight = %d", observationWeight)
 	log.Printf("Option: seenThreshold = %d", seenThreshold)
-	log.Printf("Option: observationInc = %d", observationInc)
+	//log.Printf("Option: observationInc = %d", observationInc)
+    log.Printf("Option: MAX_OBSERVATION = %d", MAX_OBSERVATION)
 	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
     log.Printf("Option: dupsOption = %v", dupsOption)
     log.Printf("Option: updateReference = %v", updateReference)
