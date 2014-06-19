@@ -744,15 +744,10 @@ func encodeReadsFromTempFile(
 	for i, c := range counts {
 		bucketMer := stringToKmer(buckets[i])
 		if c > 0 {
-            log.Printf("B %s %d %d", buckets[i], i, c)
 			// write out the given number of reads
 			for j := 0; j < c; j++ {
                 r, err := buf.ReadString('\n')
-                log.Printf("Q %s", r)
                 DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
-                if r[:globalK] != buckets[i] {
-                    log.Fatalf("Read doesn't match bucket %s %s", buckets[i], r)
-                }
                 encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
 				n++
 			}
@@ -764,12 +759,8 @@ func encodeReadsFromTempFile(
             encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
 
             // skip past c-1 reads that should be identical
-            for j := 1; j < c; j++ {
-                q, err := buf.ReadString('\n')
-                if q != r {
-                    log.Fatalf("Reads disagree:\n%s\n%s", r,q)
-                }
-
+            for j := 1; j < AbsInt(c); j++ {
+                buf.ReadString('\n')
                 DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
             }
 			n++
