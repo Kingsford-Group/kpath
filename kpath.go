@@ -18,10 +18,10 @@ x go vet
 x .gitignore
 
 x fix last bucket bug (might not be negated)
-- refactor to put bitio and arithc in subpackages
+x refactor to put bitio and arithc in subpackages
 
-- Go 1.3
-- new git repo
+x Go 1.3
+x fix md5 hash?
 
 - update to use variable sized cap with a map to hold large counts
 */
@@ -1036,6 +1036,8 @@ func decodeReads(
 	patchAndWriteRead := func(head, tail string) {
 		// put the head & tail together
 		s := fmt.Sprintf("%s%s", head, tail)
+        md5Hash.Write([]byte(s))
+
 		// put back the ns if we have them
 		if nLocations != nil {
 			s = putbackNs(s, nLocations[n])
@@ -1050,7 +1052,6 @@ func decodeReads(
         if outputFastaOption {
             fmt.Fprintf(buf, ">R%d\n", n)
         }
-        md5Hash.Write([]byte(s))
 		buf.Write([]byte(s))
 		buf.WriteByte('\n')
 		return
@@ -1166,6 +1167,20 @@ func main() {
 	}
 	log.Printf("Using kmer size = %d", globalK)
 	setShiftKmerMask()
+
+    if refFile == "" {
+        log.Fatalf("Must specify gzipped fasta as reference with -ref")
+    }
+
+    if readFile == "" {
+        log.Println("Must specify input file with -reads")
+        log.Fatalln("If decoding, just give basename of encoded files.")
+    }
+
+    if outFile == "" {
+        log.Println("Must specify output location with -out")
+        log.Println("If encoding, omit extension.")
+    }
 
 	if cpuProfile != "" {
 		log.Printf("Writing CPU profile to %s", cpuProfile)
