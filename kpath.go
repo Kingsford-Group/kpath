@@ -69,6 +69,7 @@ var (
 	//smoothed      int
 	flipped       int
     byteCount       uint64
+    readCount       uint64
 )
 
 var (
@@ -346,8 +347,8 @@ func nextInterval(
 	if ok {
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
-        if byteCount >= (100-16)*7673568 && byteCount < (100-16)*7673578 {
-            fmt.Printf("%d %s C (%d %d %d) %v %d\n", byteCount, kmerToString(contextMer, globalK), a, b, total, info.next, kidx)
+        if readCount >= 7673568 && readCount < 7673578 {
+            fmt.Printf("%d %d %s C (%d %d %d) %v %d\n", byteCount, readCount, kmerToString(contextMer, globalK), a, b, total, info.next, kidx)
         }
         if updateReference {
             if uint64(info.next[kidx]) + 1 < MAX_OBSERVATION {
@@ -370,8 +371,8 @@ func nextInterval(
 		// if the context doesnt exist, use a simple default interval
         //a, b, total = intervalForDefault(kidx) ZZZ
         a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
-        if byteCount >= (100-16)*7673568 && byteCount < (100-16)*7673578 {
-            fmt.Printf("%d %s D (%d %d %d) %v %d\n", byteCount, kmerToString(contextMer, globalK), a, b, total, defaultInterval, kidx)
+        if readCount >= 7673568 && readCount < 7673578 {
+            fmt.Printf("%d %d %s D (%d %d %d) %v %d\n", byteCount, readCount, kmerToString(contextMer, globalK), a, b, total, defaultInterval, kidx)
         }
 		defaultInterval[kidx]++
         defaultIntervalSum++
@@ -712,6 +713,7 @@ func encodeWithBuckets(
                 encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
                 curRead++
                 n++
+                readCount = uint64(curRead)
             }
         } else {
             // all the reads in this bucket are the same, so just write one
@@ -719,6 +721,7 @@ func encodeWithBuckets(
             encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
             curRead += AbsInt(c)
             n++
+            readCount = uint64(curRead)
         }
     }
 
