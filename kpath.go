@@ -718,7 +718,6 @@ func preprocessWithBuckets(
     return processedFile, buckets, counts
 }
 
-
 // encodeReadsFromTempFile() reads the newline seperated reads from tempFile
 // and encodes them using the information in buckets, counts, hash. It writes
 // to the given arithmetic coder.  buckets, counts and tempFile are obtained
@@ -740,7 +739,6 @@ func encodeReadsFromTempFile(
 	encodeStart := time.Now()
 	log.Printf("Encoding reads...")
 
-	curRead := 0
 	for i, c := range counts {
 		bucketMer := stringToKmer(buckets[i])
 		if c > 0 {
@@ -748,8 +746,10 @@ func encodeReadsFromTempFile(
 			for j := 0; j < c; j++ {
                 r, err := buf.ReadString('\n')
                 DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+                if r[:globalK] != buckets[i] {
+                    log.Fatalf("Read doesn't match bucket %s %s", buckets[i], r)
+                }
                 encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
-				curRead++
 				n++
 			}
 		} else {
@@ -761,10 +761,13 @@ func encodeReadsFromTempFile(
 
             // skip past c-1 reads that should be identical
             for j := 1; j < c; j++ {
-                _, err = buf.ReadString('\n')
+                q, err := buf.ReadString('\n')
+                if q != r {
+                    log.Fatalf("Reads disagree:\n%s\n%s", r,q)
+                }
+
                 DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
             }
-			curRead += AbsInt(c)
 			n++
 		}
 	}
