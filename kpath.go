@@ -68,6 +68,7 @@ var (
 	contextExists int
 	//smoothed      int
 	flipped       int
+    byteCount       uint64
 )
 
 var (
@@ -339,11 +340,13 @@ func nextInterval(
     contextMer Kmer, 
     kidx byte,
 ) (a uint64, b uint64, total uint64) {
+    byteCount++
 	info, ok := hash[contextMer]
 	// if the context exists, use that distribution
 	if ok {
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
+        fmt.Printf("%d C (%d %d %d) %v %d\n", byteCount, a, b, total, info.next, kidx)
         if updateReference {
             if uint64(info.next[kidx]) + 1 < MAX_OBSERVATION {
                 info.next[kidx]++
@@ -365,6 +368,7 @@ func nextInterval(
 		// if the context doesnt exist, use a simple default interval
         //a, b, total = intervalForDefault(kidx) ZZZ
         a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
+        fmt.Printf("%d D (%d %d %d) %v %d\n", byteCount, a, b, total, defaultInterval, kidx)
 		defaultInterval[kidx]++
         defaultIntervalSum++
 
