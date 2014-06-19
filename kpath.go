@@ -35,7 +35,7 @@ type KmerCount uint32
 
 // MAX_OBERSERVATION should be the largest value that can be stored in a
 // KmerCount
-const MAX_OBSERVATION uint64 = math.MaxUint64
+const MAX_OBSERVATION uint64 = math.MaxUint16
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
@@ -345,6 +345,12 @@ func nextInterval(
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
         if updateReference {
+            if uint64(info.next[kidx]) + 1 < MAX_OBSERVATION {
+                info.next[kidx]++
+                hash[contextMer] = info
+            }
+
+            /*
             if info.next[kidx] >= seenThreshold { 
                 if uint64(info.next[kidx]) + uint64(observationInc) < MAX_OBSERVATION { //AA
                     info.next[kidx] += observationInc
@@ -353,6 +359,7 @@ func nextInterval(
                 info.next[kidx]++
             }
             hash[contextMer] = info
+            */
         }
 	} else {
 		// if the context doesnt exist, use a simple default interval
