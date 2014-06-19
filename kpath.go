@@ -347,7 +347,7 @@ func nextInterval(
 	if ok {
 		contextExists++
 		a, b, total = intervalFor(kidx, info.next, contextWeight)
-        if readCount >= 7673568 && readCount < 7673578 {
+        if readCount >= 2613732 && readCount <= 2613743 {
             fmt.Printf("%d %d %s C (%d %d %d) %v %d\n", byteCount, readCount, kmerToString(contextMer, globalK), a, b, total, info.next, kidx)
         }
         if updateReference {
@@ -371,7 +371,7 @@ func nextInterval(
 		// if the context doesnt exist, use a simple default interval
         //a, b, total = intervalForDefault(kidx) ZZZ
         a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
-        if readCount >= 7673568 && readCount < 7673578 {
+        if readCount >= 2613732 && readCount <= 2613743 {
             fmt.Printf("%d %d %s D (%d %d %d) %v %d\n", byteCount, readCount, kmerToString(contextMer, globalK), a, b, total, defaultInterval, kidx)
         }
 		defaultInterval[kidx]++
@@ -935,7 +935,7 @@ func decodeSingleRead(
     // function called by Decode
 	lu := func(t uint64) (uint64, uint64, uint64) {
         a,b,c := lookup(hash, contextMer, t)
-        if readCount >= 7673568 && readCount <= 7673578 {
+        if readCount >= 2613732 && readCount <= 2613743 {
             fmt.Printf("t = %d (%d,%d,%d) %s\n", t, a,b,c, kmerToString(contextMer, globalK))
         }
         return a,b,c
