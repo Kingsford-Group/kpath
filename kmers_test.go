@@ -17,7 +17,7 @@ func TestKmerConversion(t *testing.T) {
 
 func TestKmerShift(t *testing.T) {
 	globalK = 5
-    setShiftKmerMask()
+	setShiftKmerMask()
 	m1 := kmerToString(shiftKmer(stringToKmer("TTCGT"), acgt(byte('G'))), globalK)
 	if m1 != "TCGTG" {
 		t.Fatalf("%s != %s (1)", m1, "TCGTG")

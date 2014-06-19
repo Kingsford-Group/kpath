@@ -26,6 +26,21 @@ x3. Write out two-bit length as a log message
 */
 
 /*
+// capTransitionCounts() postprocesses the kmer hash to make all transition
+// counts at most the given max.
+func capTransitionCounts(hash KmerHash, max int) {
+	M := KmerCount(max)
+	for _, v := range hash {
+		for i, count := range v.next {
+			if count > M {
+				v.next[i] = M
+			}
+		}
+	}
+}
+*/
+
+/*
 // readAndFlipReads() reads the reads and reverse complements them if the
 // reverse complement matches the hash better (according to a countMatching*
 // function above). It returns a slide of the reads. "N"s are treated as "A"s.
