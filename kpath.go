@@ -8,14 +8,19 @@ x only compute interval on encode, not decode
 x add option to set number of threads used. Default to NumCPUs()-2
 x add NumGoProcs to decoder
 
-- enable 16-bit mode
-- go fmt
+x enable 16-bit mode
+x go fmt
 
-- compute checksum and save it in counts file
-- output to FASTA instead of .seq for decode
-- write reads to temp file to save memory
+x compute checksum and save it in counts file
+x output to FASTA instead of .seq for decode
+x write reads to temp file to save memory
 
 - Go 1.3
+- .gitignore
+- refactor to put bitio and arithc in subpackages
+- new git repo
+
+- update to use variable sized cap with a map to hold large counts
 */
 
 import (
@@ -33,6 +38,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+    "io/ioutil"
+    "crypto/md5"
 
 	"kingsford/arithc"
 	"kingsford/bitio"
@@ -580,12 +587,11 @@ func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder 
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
 // and their counts, and then encodes each read.
-func encodeWithBuckets(
-	readFile,
+func preprocessWithBuckets(
+	readFile string,
 	outBaseName string,
 	hash KmerHash,
-	coder *arithc.Encoder,
-) (n int) {
+) (*os.File, []string, []int) {
 	// read the reads and flip as needed
 	reads := readAndFlipReads(readFile, hash, flipReadsOption)
 
@@ -684,19 +690,55 @@ func encodeWithBuckets(
 		return
 	}()
 
-	log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
+    // create a temp file containing the processed reads
+    processedFile, err := ioutil.TempFile("", "kpath-encode-" + outBaseName)
+    DIE_ON_ERR(err, "Couldn't create temporary file in %s", os.TempDir())
+    md5Hash := md5.New()
+    waitForTemp := make(chan struct{})
+    go func() {
+        for i := range reads {
+            md5Hash.Write(reads[i].Seq)
+            processedFile.Write(reads[i].Seq)
+            processedFile.Write([]byte{'\n'})
+        }
+        processedFile.Seek(0,0)
+        close(waitForTemp)
+    }()
 
-	/*
-	   debugReads, err := os.Create(outBaseName + ".reads")
-	   DIE_ON_ERR(err, "Couldnt' create debug file.")
-	   defer debugReads.Close()
-	   for i := range reads {
-	       fmt.Fprintln(debugReads, string(reads[i].Seq))
-	   }*/
+    log.Printf("MD5 hash of reads = %x", md5Hash.Sum(nil))
 
+	// Wait for each of the coders to finish
+	<-waitForBuckets
+	<-waitForCounts
+	<-waitForNs
+	<-waitForFlipped
+    <-waitForTemp
+
+	log.Printf("Done processing; reads are of length %d ...", readLength)
+    return processedFile, buckets, counts
+}
+
+
+// encodeReadsFromTempFile() reads the newline seperated reads from tempFile
+// and encodes them using the information in buckets, counts, hash. It writes
+// to the given arithmetic coder.  buckets, counts and tempFile are obtained
+// with preprocessWithBuckets().
+func encodeReadsFromTempFile(
+    tempFile *os.File, 
+    buckets []string, 
+    counts []int,
+    hash KmerHash, 
+	coder *arithc.Encoder,
+) (n int) {
 	/*** The main work to encode the read tails ***/
+	log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
+    runtime.GC()
+    runtime.LockOSThread()
+
+    buf := bufio.NewReader(tempFile)
+
 	encodeStart := time.Now()
-	log.Printf("Encoding reads, each of length %d ...", readLength)
+	log.Printf("Encoding reads...")
 
 	curRead := 0
 	for i, c := range counts {
@@ -704,27 +746,37 @@ func encodeWithBuckets(
 		if c > 0 {
 			// write out the given number of reads
 			for j := 0; j < c; j++ {
-				encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
+                r, err := buf.ReadString('\n')
+                DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+				encodeSingleReadWithBucket(bucketMer, r, hash, coder)
 				curRead++
 				n++
 			}
 		} else {
 			// all the reads in this bucket are the same, so just write one
 			// and skip past the rest.
-			encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
+            r, err := buf.ReadString('\n')
+            DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+			encodeSingleReadWithBucket(bucketMer, r, hash, coder)
+
+            // skip past c-1 reads that should be identical
+            for j := 1; j < c; j++ {
+                _, err = buf.ReadString('\n')
+                DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+            }
 			curRead += AbsInt(c)
 			n++
 		}
 	}
 
-	// Wait for each of the coders to finish
-	<-waitForBuckets
-	<-waitForCounts
-	<-waitForNs
-	<-waitForFlipped
-
 	log.Printf("done. Took %v seconds to encode the tails.",
 		time.Now().Sub(encodeStart).Seconds())
+    runtime.UnlockOSThread()
+
+    tempFile.Close()
+    err := os.Remove(tempFile.Name())
+    DIE_ON_ERR(err, "Couldn't delete temp file %s", tempFile.Name())
+
 	return
 }
 
@@ -978,6 +1030,8 @@ func decodeReads(
 	ncount := 0
 	buf := bufio.NewWriter(out)
 
+    md5Hash := md5.New()
+
 	patchAndWriteRead := func(head, tail string) {
 		// put the head & tail together
 		s := fmt.Sprintf("%s%s", head, tail)
@@ -992,10 +1046,10 @@ func decodeReads(
 			flipped++
 		}
 		// write it out
-		/* XXX for fasta:
-		   if outputFastaOption {
-		       buf.Write([]byte(fmt.Fprintf(">R%d\n", n)))
-		   } */
+        if outputFastaOption {
+            fmt.Fprintf(buf, ">R%d\n", n)
+        }
+        md5Hash.Write([]byte(s))
 		buf.Write([]byte(s))
 		buf.WriteByte('\n')
 		return
@@ -1030,6 +1084,7 @@ func decodeReads(
 	}
 	buf.Flush()
 	log.Printf("Added back %d Ns to the reads.", ncount)
+    log.Printf("MD5 hash of reads = %x", md5Hash.Sum(nil))
 	log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
 }
 
@@ -1158,9 +1213,10 @@ func main() {
 
 		// encode reads
 		<-waitForReference
-		n := encodeWithBuckets(readFile, outFile, hash, encoder)
+        tempReadFile, buckets, counts := preprocessWithBuckets(readFile, outFile, hash)
+        n := encodeReadsFromTempFile(tempReadFile, buckets, counts, hash, encoder)
 		log.Printf("Reads Flipped: %v", flipped)
-		log.Printf("Encoded %v reads.", n)
+		log.Printf("Encoded %v reads (may be < # of input reads due to duplicates).", n)
 
 	} else {
 		/* decode -k -ref -reads=FOO -out=OUT.seq
