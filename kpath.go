@@ -2,6 +2,19 @@ package main
 
 /* Version June 17, 2014 */
 
+/*
+x remove debugging code
+x only compute interval on encode, not decode
+x add option to set number of threads used. Default to NumCPUs()-2
+x add NumGoProcs to decoder
+
+- enable 16-bit mode
+
+- compute checksum and save it in counts file
+- output to FASTA instead of .seq for decode
+- write reads to temp file to save memory
+*/
+
 
 import (
 	"bufio"
@@ -66,10 +79,7 @@ var (
     defaultIntervalSum uint64 = 4*2
 
 	contextExists int
-	//smoothed      int
 	flipped       int
-    byteCount       uint64
-    readCount       uint64
 )
 
 var (
@@ -88,9 +98,6 @@ const (
 	pseudoCount       uint64 = 1
 	observationWeight uint64 = 10
 	seenThreshold     KmerCount = 2 // before this threshold, increment 1 and treat as unseen
-	//observationInc    KmerCount = 1 // once above seenThreshold, increment by this on each observation
-
-	//smoothOption    bool = false
 )
 
 //===================================================================
@@ -185,6 +192,7 @@ func reverseComplement(r string) string {
 	return string(s)
 }
 
+// AbsInt() computes the absolute value of an integer.
 func AbsInt(x int) int {
     if x < 0 { return -x }
     return x
@@ -248,8 +256,8 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 		for i := 0; i < len(s)-k; i++ {
 			info := hash[contextMer]
 			next := acgt(s[i+k])
-            //info.next[next] += observationInc XXX
-            info.next[next] = 2//*observationInc
+            // seeing something in the reference gives us a count of seenThreshold
+            info.next[next] = seenThreshold
             hash[contextMer] = info
 
 			contextMer = shiftKmer(contextMer, next)
@@ -258,6 +266,7 @@ func countKmersInReference(k int, fastaFile string) KmerHash {
 	return hash
 }
 
+/*
 // capTransitionCounts() postprocesses the kmer hash to make all transition
 // counts at most the given max.
 func capTransitionCounts(hash KmerHash, max int) {
@@ -270,6 +279,7 @@ func capTransitionCounts(hash KmerHash, max int) {
 		}
 	}
 }
+*/
 
 //===================================================================
 // Encoding
@@ -340,39 +350,26 @@ func nextInterval(
     hash KmerHash, 
     contextMer Kmer, 
     kidx byte,
+    computeInterval bool,
 ) (a uint64, b uint64, total uint64) {
-    byteCount++
 	info, ok := hash[contextMer]
 	// if the context exists, use that distribution
 	if ok {
 		contextExists++
-		a, b, total = intervalFor(kidx, info.next, contextWeight)
-        if readCount >= 2613732 && readCount <= 2613743 {
-            fmt.Printf("%d %d %s C (%d %d %d) %v %d\n", byteCount, readCount, kmerToString(contextMer, globalK), a, b, total, info.next, kidx)
+        if computeInterval {
+            a, b, total = intervalFor(kidx, info.next, contextWeight)
         }
         if updateReference {
             if uint64(info.next[kidx]) + 1 < MAX_OBSERVATION {
                 info.next[kidx]++
                 hash[contextMer] = info
             }
-
-            /*
-            if info.next[kidx] >= seenThreshold { 
-                if uint64(info.next[kidx]) + uint64(observationInc) < MAX_OBSERVATION { //AA
-                    info.next[kidx] += observationInc
-                } //AA
-            } else {
-                info.next[kidx]++
-            }
-            hash[contextMer] = info
-            */
         }
 	} else {
 		// if the context doesnt exist, use a simple default interval
         //a, b, total = intervalForDefault(kidx) ZZZ
-        a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
-        if readCount >= 2613732 && readCount <= 2613743 {
-            fmt.Printf("%d %d %s D (%d %d %d) %v %d\n", byteCount, readCount, kmerToString(contextMer, globalK), a, b, total, defaultInterval, kidx)
+        if computeInterval {
+            a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
         }
 		defaultInterval[kidx]++
         defaultIntervalSum++
@@ -470,7 +467,6 @@ func readAndFlipReads(
                 count := flipRange(reads[i*blockSize : end], hash)
                 c <- count
                 close(c)
-                log.Printf("Worker %v flipped %d reads", i, count)
                 runtime.Goexit()
                 return
             }(i, c)
@@ -574,18 +570,13 @@ func writeFlipped(out *bitio.Writer, reads []*FastQ) {
 // for initial part, and arithmetic encoding for the rest.
 func encodeSingleReadWithBucket(contextMer Kmer, r string, hash KmerHash, coder *arithc.Encoder) {
 	// encode rest using the reference probs
-    //bwStart := arithc.BitsWritten
-
-    arithc.Debug = (readCount >= 2613732 && readCount <= 2613743)
 
 	for i := globalK; i < len(r); i++ {
 		char := acgt(r[i])
-		a, b, total := nextInterval(hash, contextMer, char)
-        err := coder.Encode(a, b, total)
-		DIE_ON_ERR(err, "Error encoding read: %s", r)
+		a, b, total := nextInterval(hash, contextMer, char, true)
+        coder.Encode(a, b, total)
 		contextMer = shiftKmer(contextMer, char)
 	}
-    //fmt.Printf("W %d\n", arithc.BitsWritten - bwStart)
 }
 
 // encodeWithBuckets() reads the reads, creates the buckets, saves the buckets
@@ -696,12 +687,13 @@ func encodeWithBuckets(
 
     log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
 
+    /*
     debugReads, err := os.Create(outBaseName + ".reads")
     DIE_ON_ERR(err, "Couldnt' create debug file.")
     defer debugReads.Close()
     for i := range reads {
         fmt.Fprintln(debugReads, string(reads[i].Seq))
-    }
+    }*/
 
 	/*** The main work to encode the read tails ***/
     encodeStart := time.Now()
@@ -716,7 +708,6 @@ func encodeWithBuckets(
                 encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
                 curRead++
                 n++
-                readCount = uint64(curRead)
             }
         } else {
             // all the reads in this bucket are the same, so just write one
@@ -724,7 +715,6 @@ func encodeWithBuckets(
             encodeSingleReadWithBucket(bucketMer, string(reads[curRead].Seq), hash, coder)
             curRead += AbsInt(c)
             n++
-            readCount = uint64(curRead)
         }
     }
 
@@ -938,19 +928,13 @@ func decodeSingleRead(
     // function called by Decode
 	lu := func(t uint64) (uint64, uint64, uint64) {
         a,b,c := lookup(hash, contextMer, t)
-        if readCount >= 2613732 && readCount <= 2613743 {
-            fmt.Printf("t = %d (%d,%d,%d) %s\n", t, a,b,c, kmerToString(contextMer, globalK))
-        }
         return a,b,c
 	}
-
-
-    arithc.Debug = (readCount >= 2613732 && readCount <= 2613743)
 
     for i := 0; i < tailLen; i++ {
         // decode next symbol
         symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
-        DIE_ON_ERR(err, "Fatal error decoding! R")
+        DIE_ON_ERR(err, "Fatal error decoding!")
         b := byte(symb)
 
         // write it out
@@ -958,14 +942,14 @@ func decodeSingleRead(
 
         // update hash counts (throws away the computed interval; just
         // called for side effects.)
-        nextInterval(hash, contextMer, b)
+        nextInterval(hash, contextMer, b, false)
 
         // update the new context
         contextMer = shiftKmer(contextMer, b)
     }
 }
 
-// replace the letters at the given position by Ns
+// putbackNs() replaces the letters at the given position by Ns.
 func putbackNs(s string, p []byte) string {
     b := []byte(s)
     for _, v := range p {
@@ -1017,16 +1001,11 @@ func decodeReads(
     tailLen := readLen-len(kmers[0])
     tailBuf := make([]byte, tailLen)
 
-	defer func() {
-        buf.Flush()
-        log.Printf("Added back %d Ns to the reads.", ncount)
-        log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
-    }()
+    log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
 
     // for every bucket
     for curBucket, c := range counts {
         contextMer := stringToKmer(kmers[curBucket])
-        //fmt.Printf("B %v %d\n", kmers[curBucket], c)
 
         // if bucket is a uniform bucket, write out |c| copies of the decoded
         // string
@@ -1035,7 +1014,6 @@ func decodeReads(
             for j := 0; j < AbsInt(c); j++ {
                 patchAndWriteRead(kmers[curBucket], string(tailBuf))
                 n++
-                readCount++
             }
         } else {
             // otherwise, decode a read for each string in the bucket
@@ -1043,10 +1021,12 @@ func decodeReads(
                 decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
                 patchAndWriteRead(kmers[curBucket], string(tailBuf))
                 n++
-                readCount++
             }
         }
     }
+    buf.Flush()
+    log.Printf("Added back %d Ns to the reads.", ncount)
+    log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
 }
 
 //===================================================================
@@ -1058,8 +1038,7 @@ func decodeReads(
 func DIE_ON_ERR(err error, msg string, args ...interface{}) {
 	if err != nil {
 		log.Printf("Error: "+msg, args...)
-		log.Printf("%v", err)
-        panic(err)
+		log.Fatalf("%v", err)
 	}
 }
 
@@ -1074,6 +1053,7 @@ func init() {
     encodeFlags.BoolVar(&flipReadsOption, "flip", true, "if true, reverse complement reads as needed") 
     encodeFlags.BoolVar(&dupsOption, "dups", true, "if true, record dups specially")
     encodeFlags.BoolVar(&updateReference, "update", true, "if true, update the reference dynamically")
+    encodeFlags.IntVar(&maxThreads, "p", 10, "The maximum number of threads to use")
 
     encodeFlags.StringVar(&cpuProfile, "cpuProfile", "", "if nonempty, write pprof profile to given file.")
 }
@@ -1085,7 +1065,6 @@ func writeGlobalOptions() {
 	log.Printf("Option: psudeoCount = %d", pseudoCount)
 	log.Printf("Option: observationWeight = %d", observationWeight)
 	log.Printf("Option: seenThreshold = %d", seenThreshold)
-	//log.Printf("Option: observationInc = %d", observationInc)
     log.Printf("Option: MAX_OBSERVATION = %d", MAX_OBSERVATION)
 	log.Printf("Option: flipReadsOption = %v", flipReadsOption)
     log.Printf("Option: dupsOption = %v", dupsOption)
@@ -1095,7 +1074,7 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-	log.Println("Starting kpath version 0.6 (6-17-14)")
+	log.Println("Starting kpath version 0.6.1 (6-19-14)")
 
     startTime := time.Now()
 
@@ -1155,15 +1134,6 @@ func main() {
 		log.Printf("Reading from %s", readFile)
 		log.Printf("Writing to %s, %s, %s", 
             outFile+".enc", outFile+".bittree", outFile+".counts")
-
-        /*
-		var err error
-		if smoothOption {
-			smoothFile, err = os.Create("smoothed.txt")
-			DIE_ON_ERR(err, "Couldn't create smoothed file 'smoothed.txt'")
-			defer smoothFile.Close()
-		}
-        */
 
 		// create the output file
 		outF, err := os.Create(outFile + ".enc")
