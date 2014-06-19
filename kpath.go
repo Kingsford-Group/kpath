@@ -934,7 +934,11 @@ func decodeSingleRead(
 ) {
     // function called by Decode
 	lu := func(t uint64) (uint64, uint64, uint64) {
-		return lookup(hash, contextMer, t)
+        a,b,c := lookup(hash, contextMer, t)
+        if readCount >= 7673568 && readCount <= 7673578 {
+            fmt.Printf("t = %d (%d,%d,%d) %s\n", t, a,b,c, kmerToString(contextMer, globalK))
+        }
+        return a,b,c
 	}
 
     for i := 0; i < tailLen; i++ {
