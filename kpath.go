@@ -1025,6 +1025,7 @@ func decodeReads(
             for j := 0; j < AbsInt(c); j++ {
                 patchAndWriteRead(kmers[curBucket], string(tailBuf))
                 n++
+                readCount++
             }
         } else {
             // otherwise, decode a read for each string in the bucket
@@ -1032,6 +1033,7 @@ func decodeReads(
                 decodeSingleRead(contextMer, hash, tailLen, decoder, tailBuf)
                 patchAndWriteRead(kmers[curBucket], string(tailBuf))
                 n++
+                readCount++
             }
         }
     }
