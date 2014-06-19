@@ -35,7 +35,7 @@ type KmerCount uint32
 
 // MAX_OBERSERVATION should be the largest value that can be stored in a
 // KmerCount
-const MAX_OBSERVATION uint64 = math.MaxUint16
+const MAX_OBSERVATION uint64 = math.MaxUint64
 
 // A KmerInfo contains the information about a given kmer context.
 type KmerInfo struct {
