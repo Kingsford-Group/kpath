@@ -17,7 +17,7 @@ x write reads to temp file to save memory
 x go vet
 x .gitignore
 
-- fix last bucket bug (might not be negated)
+x fix last bucket bug (might not be negated)
 - refactor to put bitio and arithc in subpackages
 
 - Go 1.3
@@ -44,8 +44,8 @@ import (
     "io/ioutil"
     "crypto/md5"
 
-	"kingsford/arithc"
-	"kingsford/bitio"
+	"kingsford/kpath/arithc"
+	"kingsford/kpath/bitio"
 )
 
 //===================================================================
@@ -531,6 +531,9 @@ func listBuckets(reads []*FastQ) ([]string, []int) {
 			counts[len(counts)-1]++
 		}
 	}
+    if dupsOption && allSame && counts[len(counts)-1] > 1 {
+        counts[len(counts)-1] = -counts[len(counts)-1]
+    }
 	return buckets, counts
 }
 

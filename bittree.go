@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"kingsford/bitio"
+	"kingsford/kpath/bitio"
 )
 
 /*
