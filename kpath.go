@@ -7,7 +7,6 @@ x remove debugging code
 x only compute interval on encode, not decode
 x add option to set number of threads used. Default to NumCPUs()-2
 x add NumGoProcs to decoder
-
 x enable 16-bit mode
 x go fmt
 
@@ -15,9 +14,12 @@ x compute checksum and save it in counts file
 x output to FASTA instead of .seq for decode
 x write reads to temp file to save memory
 
-- Go 1.3
-- .gitignore
+x go vet
+x .gitignore
+
 - refactor to put bitio and arithc in subpackages
+
+- Go 1.3
 - new git repo
 
 - update to use variable sized cap with a map to hold large counts
@@ -84,7 +86,6 @@ var (
 	shiftKmerMask Kmer
 
 	defaultInterval [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
-	//defaultInterval   [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
 	defaultIntervalSum uint64 = 4 * 2
 
 	contextExists int
@@ -368,7 +369,6 @@ func nextInterval(
 		// if the context doesnt exist, use a simple default interval
 		if computeInterval {
 			a, b, total = intervalForDefault(kidx)
-			//a, b, total = intervalFor(kidx, defaultInterval, defaultWeight)
 		}
 		defaultInterval[kidx]++
 		defaultIntervalSum++
@@ -748,7 +748,7 @@ func encodeReadsFromTempFile(
 			for j := 0; j < c; j++ {
                 r, err := buf.ReadString('\n')
                 DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
-				encodeSingleReadWithBucket(bucketMer, r, hash, coder)
+                encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
 				curRead++
 				n++
 			}
@@ -757,7 +757,7 @@ func encodeReadsFromTempFile(
 			// and skip past the rest.
             r, err := buf.ReadString('\n')
             DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
-			encodeSingleReadWithBucket(bucketMer, r, hash, coder)
+            encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
 
             // skip past c-1 reads that should be identical
             for j := 1; j < c; j++ {
@@ -927,6 +927,8 @@ func dart(
 	panic(fmt.Errorf("Couldn't find range for target %d", target))
 }
 
+// dartDefault() finds the range in the default distribution that contains
+// target
 func dartDefault(target uint32) (uint64, uint64, uint64) {
 	sum := uint32(0)
 	for i, w := range defaultInterval {
@@ -944,7 +946,6 @@ func lookup(hash KmerHash, context Kmer, t uint64) (uint64, uint64, uint64) {
 	if info, ok := hash[context]; ok {
 		return dart(info.next, uint32(t), contextWeight)
 	} else {
-		//return dart(defaultInterval, uint32(t), defaultWeight) //ZZZ
 		return dartDefault(uint32(t))
 	}
 }
@@ -966,7 +967,6 @@ func contextTotal(hash KmerHash, context Kmer) uint64 {
 		return sumDist(info.next, contextWeight)
 	} else {
 		return defaultIntervalSum
-		//return sumDist(defaultInterval, defaultWeight) // ZZZ
 	}
 }
 
