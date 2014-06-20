@@ -1,0 +1,11 @@
+*.sw?
+*.gz
+*.seq
+*.enc
+*.bittree
+*.counts
+*.flipped
+*.noflip
+*.ns
+kpath
+*.pprof

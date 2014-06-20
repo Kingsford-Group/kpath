@@ -1,5 +1,8 @@
 /* TODO:
 
+Speed up decoding by skipping intervalFor 
+- check "last time through the look bug"
+
 4. conserve memory with a DNAString type (?)
 5. add some more unit tests
 */
@@ -8,7 +11,6 @@
 - gccgo was much slower than go
 - using bufio was somewhat slower than not
 - Scanner vs. ReadBytes made little difference: Scanner may be slightly faster
-- 
 
 
 ---

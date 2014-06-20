@@ -1,18 +1,18 @@
 package main
 
 import (
-    "testing"
-    "fmt"
+	"fmt"
+	"testing"
 )
 
 func TestReadFastQ(t *testing.T) {
-    records := make(chan *FastQ)
+	records := make(chan *FastQ)
 
-    fn := "test.fq"
-    fmt.Println(fn)
-    go ReadFastQ(fn, records)
+	fn := "test.fq"
+	fmt.Println(fn)
+	go ReadFastQ(fn, records)
 
-    for fq := range records {
-        PrintFastQ(fq)
-    }
+	for fq := range records {
+		PrintFastQ(fq)
+	}
 }
