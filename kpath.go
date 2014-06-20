@@ -1198,7 +1198,8 @@ func main() {
 		hash = countKmersInReference(globalK, refFile)
 		log.Printf("There are %v unique %v-mers in the reference\n",
 			len(hash), globalK)
-		log.Printf("Time: Took %v seconds to read reference.", time.Now().Sub(refStart).Seconds())
+		log.Printf("Time: Took %v seconds to read reference.", 
+            time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
 		return
 	}()
