@@ -696,7 +696,7 @@ func preprocessWithBuckets(
 	}()
 
     // create a temp file containing the processed reads
-    processedFile, err := ioutil.TempFile("", "kpath-encode-" + outBaseName + "-")
+    processedFile, err := ioutil.TempFile("", "kpath-encode-") 
     DIE_ON_ERR(err, "Couldn't create temporary file in %s", os.TempDir())
     md5Hash := md5.New()
     waitForTemp := make(chan struct{})
