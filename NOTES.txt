@@ -13,6 +13,35 @@ Speed up decoding by skipping intervalFor
 - Scanner vs. ReadBytes made little difference: Scanner may be slightly faster
 
 
+      -k=16: length of k
+
+Change the value of the context length used. Smaller k and larger k generally
+result in worse compression, but smaller k can use less resources.
+
+      -fasta=true: If false, output seqs, one per line
+
+Use "-fasta=false" to write out the reads without fasta headers.
+
+      -p=10: The maximum number of threads to use
+
+Allow kpath to use more or fewer threads.
+
+      -flip=true: if true, reverse complement reads as needed
+
+Use -flip=false to skip writing out the file that records which reads were
+reverse complemented. 
+
+
+Special options:
+----------------
+
+The following options are primarily for debugging and likely need not be used
+during normal operation.
+
+      -dups=true: if true, record dups specially
+      -update=true: if true, update the reference dynamically
+
+
 ---
 
 1. encoding / decoding with 16-bit version => 11 million correct reads, and an error at a string of Ts

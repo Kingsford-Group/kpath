@@ -1,58 +1,35 @@
 /*
-    kpath - Compression of short-read sequence data
-    Copyright (C) 2014  Carl Kingsford & Rob Patro
+   kpath - Compression of short-read sequence data
+   Copyright (C) 2014  Carl Kingsford & Rob Patro
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    Contact: carlk@cs.cmu.edu
+   Contact: carlk@cs.cmu.edu
 */
-
 
 package main
 
 /* Version June 17, 2014 */
 
-/*
-x remove debugging code
-x only compute interval on encode, not decode
-x add option to set number of threads used. Default to NumCPUs()-2
-x add NumGoProcs to decoder
-x enable 16-bit mode
-x go fmt
-
-x compute checksum and save it in counts file
-x output to FASTA instead of .seq for decode
-x write reads to temp file to save memory
-
-x go vet
-x .gitignore
-
-x fix last bucket bug (might not be negated)
-x refactor to put bitio and arithc in subpackages
-
-x Go 1.3
-x fix md5 hash?
-
-- update to use variable sized cap with a map to hold large counts
-*/
-
 import (
 	"bufio"
 	"compress/gzip"
+	"crypto/md5"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"math"
 	"os"
@@ -62,8 +39,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-    "io/ioutil"
-    "crypto/md5"
 
 	"kingsford/kpath/arithc"
 	"kingsford/kpath/bitio"
@@ -107,8 +82,8 @@ var (
 	globalK       int
 	shiftKmerMask Kmer
 
-	defaultInterval [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
-	defaultIntervalSum uint64 = 4 * 2
+	defaultInterval    [len(ALPHA)]uint32 = [...]uint32{2, 2, 2, 2}
+	defaultIntervalSum uint64             = 4 * 2
 
 	contextExists int
 	flipped       int
@@ -421,7 +396,7 @@ func countMatchingObservations(hash KmerHash, r string) (n KmerCount) {
 // support sorting the fastq list lexicographically
 type Lexicographically []*FastQ
 
-func (a Lexicographically) Len() int      { return len(a) }
+func (a Lexicographically) Len() int { return len(a) }
 
 func (a Lexicographically) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
 
@@ -486,8 +461,8 @@ func readAndFlipReads(
 			wait[i] = make(chan int)
 		}
 		blockSize := 1 + len(reads)/len(wait)
-		log.Printf("Have %v read flippers, each working on %v reads", 
-            len(wait), blockSize)
+		log.Printf("Have %v read flippers, each working on %v reads",
+			len(wait), blockSize)
 		for i, c := range wait {
 			go func(i int, c chan int) {
 				end := (i + 1) * blockSize
@@ -552,9 +527,9 @@ func listBuckets(reads []*FastQ) ([]string, []int) {
 			counts[len(counts)-1]++
 		}
 	}
-    if dupsOption && allSame && counts[len(counts)-1] > 1 {
-        counts[len(counts)-1] = -counts[len(counts)-1]
-    }
+	if dupsOption && allSame && counts[len(counts)-1] > 1 {
+		counts[len(counts)-1] = -counts[len(counts)-1]
+	}
 	return buckets, counts
 }
 
@@ -716,32 +691,32 @@ func preprocessWithBuckets(
 		return
 	}()
 
-    // create a temp file containing the processed reads
-    processedFile, err := ioutil.TempFile("", "kpath-encode-") 
-    DIE_ON_ERR(err, "Couldn't create temporary file in %s", os.TempDir())
-    md5Hash := md5.New()
-    waitForTemp := make(chan struct{})
-    go func() {
-        for i := range reads {
-            md5Hash.Write(reads[i].Seq)
-            processedFile.Write(reads[i].Seq)
-            processedFile.Write([]byte{'\n'})
-        }
-        processedFile.Seek(0,0)
-        close(waitForTemp)
-    }()
+	// create a temp file containing the processed reads
+	processedFile, err := ioutil.TempFile("", "kpath-encode-")
+	DIE_ON_ERR(err, "Couldn't create temporary file in %s", os.TempDir())
+	md5Hash := md5.New()
+	waitForTemp := make(chan struct{})
+	go func() {
+		for i := range reads {
+			md5Hash.Write(reads[i].Seq)
+			processedFile.Write(reads[i].Seq)
+			processedFile.Write([]byte{'\n'})
+		}
+		processedFile.Seek(0, 0)
+		close(waitForTemp)
+	}()
 
-    log.Printf("MD5 hash of reads = %x", md5Hash.Sum(nil))
+	log.Printf("MD5 hash of reads = %x", md5Hash.Sum(nil))
 
 	// Wait for each of the coders to finish
 	<-waitForBuckets
 	<-waitForCounts
 	<-waitForNs
 	<-waitForFlipped
-    <-waitForTemp
+	<-waitForTemp
 
 	log.Printf("Done processing; reads are of length %d ...", readLength)
-    return processedFile, buckets, counts
+	return processedFile, buckets, counts
 }
 
 // encodeReadsFromTempFile() reads the newline seperated reads from tempFile
@@ -749,18 +724,18 @@ func preprocessWithBuckets(
 // to the given arithmetic coder.  buckets, counts and tempFile are obtained
 // with preprocessWithBuckets().
 func encodeReadsFromTempFile(
-    tempFile *os.File, 
-    buckets []string, 
-    counts []int,
-    hash KmerHash, 
+	tempFile *os.File,
+	buckets []string,
+	counts []int,
+	hash KmerHash,
 	coder *arithc.Encoder,
 ) (n int) {
 	/*** The main work to encode the read tails ***/
 	log.Printf("Currently have %v Go routines...", runtime.NumGoroutine())
-    runtime.GC()
-    runtime.LockOSThread()
+	runtime.GC()
+	runtime.LockOSThread()
 
-    buf := bufio.NewReader(tempFile)
+	buf := bufio.NewReader(tempFile)
 
 	encodeStart := time.Now()
 	log.Printf("Encoding reads...")
@@ -770,34 +745,34 @@ func encodeReadsFromTempFile(
 		if c > 0 {
 			// write out the given number of reads
 			for j := 0; j < c; j++ {
-                r, err := buf.ReadString('\n')
-                DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
-                encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
+				r, err := buf.ReadString('\n')
+				DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+				encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
 				n++
 			}
 		} else {
 			// all the reads in this bucket are the same, so just write one
 			// and skip past the rest.
-            r, err := buf.ReadString('\n')
-            DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
-            encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
+			r, err := buf.ReadString('\n')
+			DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+			encodeSingleReadWithBucket(bucketMer, r[:len(r)-1], hash, coder)
 
-            // skip past c-1 reads that should be identical
-            for j := 1; j < AbsInt(c); j++ {
-                buf.ReadString('\n')
-                DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
-            }
+			// skip past c-1 reads that should be identical
+			for j := 1; j < AbsInt(c); j++ {
+				buf.ReadString('\n')
+				DIE_ON_ERR(err, "Couldn't read from temp file %s", tempFile.Name())
+			}
 			n++
 		}
 	}
 
 	log.Printf("done. Took %v seconds to encode the tails.",
 		time.Now().Sub(encodeStart).Seconds())
-    runtime.UnlockOSThread()
+	runtime.UnlockOSThread()
 
-    tempFile.Close()
-    err := os.Remove(tempFile.Name())
-    DIE_ON_ERR(err, "Couldn't delete temp file %s", tempFile.Name())
+	tempFile.Close()
+	err := os.Remove(tempFile.Name())
+	DIE_ON_ERR(err, "Couldn't delete temp file %s", tempFile.Name())
 
 	return
 }
@@ -1052,12 +1027,12 @@ func decodeReads(
 	ncount := 0
 	buf := bufio.NewWriter(out)
 
-    md5Hash := md5.New()
+	md5Hash := md5.New()
 
 	patchAndWriteRead := func(head, tail string) {
 		// put the head & tail together
 		s := fmt.Sprintf("%s%s", head, tail)
-        md5Hash.Write([]byte(s))
+		md5Hash.Write([]byte(s))
 
 		// put back the ns if we have them
 		if nLocations != nil {
@@ -1070,9 +1045,9 @@ func decodeReads(
 			flipped++
 		}
 		// write it out
-        if outputFastaOption {
-            fmt.Fprintf(buf, ">R%d\n", n)
-        }
+		if outputFastaOption {
+			fmt.Fprintf(buf, ">R%d\n", n)
+		}
 		buf.Write([]byte(s))
 		buf.WriteByte('\n')
 		return
@@ -1107,7 +1082,7 @@ func decodeReads(
 	}
 	buf.Flush()
 	log.Printf("Added back %d Ns to the reads.", ncount)
-    log.Printf("MD5 hash of reads = %x", md5Hash.Sum(nil))
+	log.Printf("MD5 hash of reads = %x", md5Hash.Sum(nil))
 	log.Printf("done. Wrote %v reads; %d were flipped", n, flipped)
 }
 
@@ -1158,11 +1133,11 @@ func writeGlobalOptions() {
 // main() encodes or decodes a set of reads based on the first command line
 // argument (which is either encode or decode).
 func main() {
-    fmt.Println("kpath  Copyright (C) 2014  Carl Kingsford & Rob Patro\n")
+	fmt.Println("kpath  Copyright (C) 2014  Carl Kingsford & Rob Patro\n")
 
-    fmt.Println("This program comes with ABSOLUTELY NO WARRANTY; This is free software, and")
-    fmt.Println("you are welcome to redistribute it under certain conditions; see")
-    fmt.Println("accompanying LICENSE.txt file.\n")
+	fmt.Println("This program comes with ABSOLUTELY NO WARRANTY; This is free software, and")
+	fmt.Println("you are welcome to redistribute it under certain conditions; see")
+	fmt.Println("accompanying LICENSE.txt file.\n")
 
 	log.Println("Starting kpath version 0.6.1 (6-19-14)")
 	startTime := time.Now()
@@ -1194,19 +1169,19 @@ func main() {
 	log.Printf("Using kmer size = %d", globalK)
 	setShiftKmerMask()
 
-    if refFile == "" {
-        log.Fatalf("Must specify gzipped fasta as reference with -ref")
-    }
+	if refFile == "" {
+		log.Fatalf("Must specify gzipped fasta as reference with -ref")
+	}
 
-    if readFile == "" {
-        log.Println("Must specify input file with -reads")
-        log.Fatalln("If decoding, just give basename of encoded files.")
-    }
+	if readFile == "" {
+		log.Println("Must specify input file with -reads")
+		log.Fatalln("If decoding, just give basename of encoded files.")
+	}
 
-    if outFile == "" {
-        log.Println("Must specify output location with -out")
-        log.Println("If encoding, omit extension.")
-    }
+	if outFile == "" {
+		log.Println("Must specify output location with -out")
+		log.Println("If encoding, omit extension.")
+	}
 
 	if cpuProfile != "" {
 		log.Printf("Writing CPU profile to %s", cpuProfile)
@@ -1224,8 +1199,8 @@ func main() {
 		hash = countKmersInReference(globalK, refFile)
 		log.Printf("There are %v unique %v-mers in the reference\n",
 			len(hash), globalK)
-		log.Printf("Time: Took %v seconds to read reference.", 
-            time.Now().Sub(refStart).Seconds())
+		log.Printf("Time: Took %v seconds to read reference.",
+			time.Now().Sub(refStart).Seconds())
 		close(waitForReference)
 		return
 	}()
@@ -1256,8 +1231,8 @@ func main() {
 
 		// encode reads
 		<-waitForReference
-        tempReadFile, buckets, counts := preprocessWithBuckets(readFile, outFile, hash)
-        n := encodeReadsFromTempFile(tempReadFile, buckets, counts, hash, encoder)
+		tempReadFile, buckets, counts := preprocessWithBuckets(readFile, outFile, hash)
+		n := encodeReadsFromTempFile(tempReadFile, buckets, counts, hash, encoder)
 		log.Printf("Reads Flipped: %v", flipped)
 		log.Printf("Encoded %v reads (may be < # of input reads due to duplicates).", n)
 

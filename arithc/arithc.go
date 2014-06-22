@@ -10,10 +10,10 @@
 
     This single file, arithc.go, is a Go-language implementation of an
     arithmetic coding algorithm that was originally written in C. It is a
-    simplification, reoganization, and translation of that work. 
+    simplification, reoganization, and translation of that work.
 
     The authors of kpath claim no copyright on this single file, arithc.go.
-    The remainder of kpath remains under the GPL license. 
+    The remainder of kpath remains under the GPL license.
 
     The original C version of this algorithm carried the copyright notice:
 
@@ -28,10 +28,10 @@ Authors: 	John Carpinelli   (johnfc@ecr.mu.oz.au)
 Purpose:	Data compression using a revised arithmetic coding method.
 
 Based on: 	A. Moffat, R. Neal, I.H. Witten, "Arithmetic Coding Revisted",
-		Proc. IEEE Data Compression Conference, Snowbird, Utah, 
+		Proc. IEEE Data Compression Conference, Snowbird, Utah,
 		March 1995.
 
-		Low-Precision Arithmetic Coding Implementation by 
+		Low-Precision Arithmetic Coding Implementation by
 		Radford M. Neal
 
 Copyright 1995 John Carpinelli and Wayne Salamonsen, All Rights Reserved.
@@ -47,8 +47,6 @@ notice above and this statement of conditions must remain an integral
 part of each and every copy made of these files.
 
  *************************************************************************/
-
-
 
 package arithc
 
