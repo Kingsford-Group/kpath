@@ -16,6 +16,7 @@ cp kpath-$VERSION-macosx $DIR
 cp kpath-$VERSION-linux $DIR
 
 cp README.txt $DIR
+cp LICENSE.txt $DIR
 
 tar czf $DIR.tar.gz $DIR
 

@@ -1,3 +1,55 @@
+/*
+    kpath - Compression of short-read sequence data
+    Copyright (C) 2014  Carl Kingsford & Rob Patro
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+
+    This single file, arithc.go, is a Go-language implementation of an
+    arithmetic coding algorithm that was originally written in C. It is a
+    simplification, reoganization, and translation of that work. 
+
+    The authors of kpath claim no copyright on this single file, arithc.go.
+    The remainder of kpath remains under the GPL license. 
+
+    The original C version of this algorithm carried the copyright notice:
+
+/******************************************************************************
+File:		arith.c
+
+Authors: 	John Carpinelli   (johnfc@ecr.mu.oz.au)
+	 	Wayne Salamonsen  (wbs@mundil.cs.mu.oz.au)
+  		Lang Stuiver      (langs@cs.mu.oz.au)
+  		Radford Neal      (radford@ai.toronto.edu)
+
+Purpose:	Data compression using a revised arithmetic coding method.
+
+Based on: 	A. Moffat, R. Neal, I.H. Witten, "Arithmetic Coding Revisted",
+		Proc. IEEE Data Compression Conference, Snowbird, Utah, 
+		March 1995.
+
+		Low-Precision Arithmetic Coding Implementation by 
+		Radford M. Neal
+
+Copyright 1995 John Carpinelli and Wayne Salamonsen, All Rights Reserved.
+Copyright 1996 Lang Stuiver, All Rights Reserved.
+
+These programs are supplied free of charge for research purposes only,
+and may not sold or incorporated into any commercial product.  There is
+ABSOLUTELY NO WARRANTY of any sort, nor any undertaking that they are
+fit for ANY PURPOSE WHATSOEVER.  Use them at your own risk.  If you do
+happen to find a bug, or have modifications to suggest, please report
+the same to Alistair Moffat, alistair@cs.mu.oz.au.  The copyright
+notice above and this statement of conditions must remain an integral
+part of each and every copy made of these files.
+
+ *************************************************************************/
+
+
+
 package arithc
 
 import (
