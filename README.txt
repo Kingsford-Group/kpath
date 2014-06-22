@@ -25,11 +25,11 @@ your system, you can easily build the software from the sources.
 To install using the binary:
 ----------------------------
 
-* Download the appropriate binary for your system: [Linux] [OS X]
+* Download the latest version of kpath
 
-* Decompress the tarball: tar xzf pathenc-0.6.1-XXX.tar.gz
+* Decompress the tarball: tar xzf kpath-0.6.1.tar.gz
 
-* Copy the kpath binary to a location in your path (for easy access)
+* Copy the kpath-X.X.X-OS binary to a location in your path (for easy access)
 
 
 To install using the source:
@@ -37,11 +37,20 @@ To install using the source:
 
 * Install Go, version 1.2 or 1.3 (1.3 recommended) [this is easy].
 
-* Download the source tarball.
+* Download the latest version of kpath
 
-* Decompress the tarball: tar xzf pathenc-0.6.1-src.tar.gz
+* Decompress the tarball: tar xzf kpath-0.6.1.tar.gz
+  and copy the "src" directory and its subdirectories into the "src"
+  subdirectory of your GOPATH workspace. 
 
-* Compile: "cd pathenc-0.6.1" and then "go build"
+  Alternatively, make the directory that tar created the root of your Go
+  workspace:
+
+	export GOPATH=/path/to/kpath-0.6.1/
+
+* Compile: 
+	cd kpath-0.6.1/src/kingsford/kpath 
+	go build
 
 * Copy the kpath executable that is created to a location in your path (for
   easy access)

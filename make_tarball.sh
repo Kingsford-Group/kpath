@@ -2,16 +2,19 @@
 
 VERSION=0.6.1
 DIR=kpath-$VERSION
+SRC=src/kingsford/kpath
 
 rm -rf $DIR $DIR.tar.gz
 
-mkdir $DIR
-mkdir $DIR/arithc
-mkdir $DIR/bitio
+mkdir -p $DIR/$SRC
+cp *.go $DIR/$SRC
 
-cp *.go $DIR
-cp arithc/*.go $DIR/arithc
-cp bitio/*.go $DIR/bitio
+mkdir -p $DIR/$SRC/arithc
+cp arithc/*.go $DIR/$SRC/arithc
+
+mkdir -p $DIR/$SRC/bitio
+cp bitio/*.go $DIR/$SRC/bitio
+
 cp kpath-$VERSION-macosx $DIR
 cp kpath-$VERSION-linux $DIR
 
