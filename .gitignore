@@ -7,5 +7,5 @@
 *.flipped
 *.noflip
 *.ns
-kpath
+#kpath
 *.pprof
