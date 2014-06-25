@@ -1,0 +1,54 @@
+/* TODO:
+
+Speed up decoding by skipping intervalFor 
+- check "last time through the look bug"
+
+4. conserve memory with a DNAString type (?)
+5. add some more unit tests
+*/
+
+
+- gccgo was much slower than go
+- using bufio was somewhat slower than not
+- Scanner vs. ReadBytes made little difference: Scanner may be slightly faster
+
+
+      -k=16: length of k
+
+Change the value of the context length used. Smaller k and larger k generally
+result in worse compression, but smaller k can use less resources.
+
+      -fasta=true: If false, output seqs, one per line
+
+Use "-fasta=false" to write out the reads without fasta headers.
+
+      -p=10: The maximum number of threads to use
+
+Allow kpath to use more or fewer threads.
+
+      -flip=true: if true, reverse complement reads as needed
+
+Use -flip=false to skip writing out the file that records which reads were
+reverse complemented. 
+
+
+Special options:
+----------------
+
+The following options are primarily for debugging and likely need not be used
+during normal operation.
+
+      -dups=true: if true, record dups specially
+      -update=true: if true, update the reference dynamically
+
+
+---
+
+1. encoding / decoding with 16-bit version => 11 million correct reads, and an error at a string of Ts
+2. enocoding with 16 bit version, decoding with 32-bit version produces the exact same problem
+3. encoding / decoding with the 16-bit version using the first 11 million reads gives the same problem for the last few reads (**)
+4. encoding with 32 bit field gives exactly same result as encoding with 16 bit field
+
+5. VERSION 12a1da4 works for both encoding and decoding. This is the new baseline. Verified.
+
+

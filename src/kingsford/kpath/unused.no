@@ -1,0 +1,427 @@
+/*
+x0. change pseudocount to be max (or else change the seen threshold)
+x1. fix filename handling (including outputting filename information as a log)
+x why isn't TTTT...TTT flipped? b/c it's tied
+x2. compress counts and bittree directly from here (and uncompress bittree when reading it)
+x3. move unused code over to unused.no file
+x4. update error messages and panic messages to be more consistent
+    // DIE_ON_ERROR(err, "Couldn't create bucket file: %v", err)
+x4.1 write out all the global options when encoding / decoding
+x5.2. add comments
+x6. profile to speed up
+x7. parallelize
+x5.0. read / write READLEN someplace
+x10. Handle duplicate reads
+    bucket lengths can be negative, which means every read in this bucket is the
+    same so we only encoded 1, which should be duplicated many times.
+xrunning now 5.1. test out on 3 more files
+x12. Add commandline option to turn off flipping
+- Figure X1: Comparison with SCALCE, QUIP, GZIP, and 2-bit encoding
+- Figure X2: Contribution of bucket sizes, counts, and tails to final file size
+- Figure X3: Effect of Reference, Flipping, Duplicate Handling.
+- Figure X4: Effect of k on final compression size.
+
+x3. Write out two-bit length as a log message
+
+*/
+
+/*
+// capTransitionCounts() postprocesses the kmer hash to make all transition
+// counts at most the given max.
+func capTransitionCounts(hash KmerHash, max int) {
+	M := KmerCount(max)
+	for _, v := range hash {
+		for i, count := range v.next {
+			if count > M {
+				v.next[i] = M
+			}
+		}
+	}
+}
+*/
+
+/*
+// readAndFlipReads() reads the reads and reverse complements them if the
+// reverse complement matches the hash better (according to a countMatching*
+// function above). It returns a slide of the reads. "N"s are treated as "A"s.
+// No other characters are transformed and will eventually lead to a panic.
+func readAndFlipReads(readFile string, hash KmerHash, flipReadsOption bool) []*FastQ {
+    // start the reading routine
+    log.Printf("Reading reads...")
+    readStart := time.Now()
+    fq := make(chan *FastQ, 10000000)
+    go ReadFastQ(readFile, fq)
+
+    reads := make([]*FastQ, 0, 10000000)
+
+    // for every record
+    for rec := range fq {
+        // possibly flip it
+        if flipReadsOption {
+            n1 := countMatchingObservations(hash, string(rec.Seq))
+            rcr := reverseComplement(string(rec.Seq))
+            n2 := countMatchingObservations(hash, rcr)
+
+			// if they are tied, take the lexigographically smaller one
+			if n2 > n1 || (n2 == n1 && string(rcr) < string(rec.Seq)) {
+				rec.SetReverseComplement(rcr)
+				flipped++
+			}
+        }
+        // save it in our read list
+        reads = append(reads, rec)
+    }
+    readEnd := time.Now()
+
+    // sort the records by sequence
+    sort.Sort(Lexicographically(reads))
+    readSort := time.Now()
+
+	log.Printf("Read %v reads; flipped %v of them.", len(reads), flipped)
+    log.Printf("Time: reading and flipping: %v seconds.", readEnd.Sub(readStart).Seconds())
+    log.Printf("Time: sorting reads: %v seconds.", readSort.Sub(readEnd).Seconds())
+    return reads
+}
+*/
+
+
+
+package main
+
+import (
+	"bufio"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+    "sort"
+
+	"kingsford/arithc"
+)
+
+// global variables for smoothing
+var (
+	lastSmooth   [len(ALPHA)]uint64 = [...]uint64{1, 2, 3, 4}
+	charCount    uint64
+	smoothFile   *os.File
+	tmpByteSlice []byte = make([]byte, 2)
+	readStartInterval [len(ALPHA)]KmerCount = [...]KmerCount{2, 2, 2, 2}
+)
+
+/* encode a single read: uses 1 scheme for initial part, and 1 scheme for the rest */
+func encodeSingleRead(r string, hash KmerHash, coder *arithc.Encoder) error {
+	// guess whether we should reverse complement the read
+	n1 := countMatchingObservations(hash, r)
+	rcr := reverseComplement(r)
+	n2 := countMatchingObservations(hash, rcr)
+	if n2 > n1 {
+		r = rcr
+		flipped++
+	}
+
+	var i int
+	// for early characters in the read, use the readStart interval
+	for i = 0; i < globalK; i++ {
+		a, b, total := intervalFor(r[i], readStartInterval, defaultWeight)
+		readStartInterval[acgt(r[i])]++
+		err := coder.Encode(a, b, total)
+		if err != nil {
+			return err
+		}
+	}
+
+	// encode rest using the reference probs
+	context := r[:globalK]
+	contextMer := stringToKmer(context)
+	for ; i < len(r); i++ {
+		char := acgt(r[i])
+		if smoothOption {
+			char = smoothError(hash, contextMer, char)
+		}
+		a, b, total := nextInterval(hash, contextMer, char)
+		err := coder.Encode(a, b, total)
+		if err != nil {
+			return err
+		}
+		//context = context[1:] + string(char)
+		contextMer = shiftKmer(contextMer, char)
+	}
+	return nil
+}
+
+/* Read each line as a read and encode it using encodeSingleRead */
+func encodeReads(readFile string, hash KmerHash, coder *arithc.Encoder) (n int) {
+	log.Println("Encoding reads...")
+	in, err := os.Open(readFile)
+	if err != nil {
+		log.Fatalf("Couldn't open reads file %s: %v", readFile, err)
+	}
+	defer in.Close()
+
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		line := strings.TrimSpace(strings.ToUpper(scanner.Text()))
+		err := encodeSingleRead(line, hash, coder)
+		if err != nil {
+			log.Fatalf("Error encoding read %v\n%v", line, err)
+		}
+		n++
+	}
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Couldn't read reads file: %v", err)
+	}
+	return n
+}
+
+/* Return true if transition has non-zero prob */
+func transitionHasNonZeroProb(hash KmerHash, context string, next byte) bool {
+	h, ok := hash[stringToKmer(context)]
+	return ok && h.next[acgt(next)] > 0
+}
+
+func removeExtension(filename string) string {
+	extension := filepath.Ext(filename)
+	return strings.TrimRight(filename, extension)
+}
+
+func min64(a uint64, b uint64) uint64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxChar(dist [len(ALPHA)]KmerCount) byte {
+	curMax := KmerCount(0)
+	curR := 0
+	for i, m := range dist {
+		if m > curMax {
+			curMax = m
+			curR = i
+		}
+	}
+	return baseFromBits(byte(curR))
+}
+
+func writeVarLenInt(out *os.File, b uint64) {
+	if b < 128 {
+		tmpByteSlice[0] = byte(b)
+		tmpByteSlice[1] = 0
+		out.Write(tmpByteSlice[0:1])
+	} else if b < uint64(2)<<31 {
+		tmpByteSlice[0] = byte(0x80 | (b >> 8))
+		tmpByteSlice[1] = byte(0x00FF & b)
+		out.Write(tmpByteSlice)
+	}
+}
+
+func smoothError(hash KmerHash, contextMer Kmer, next byte) byte {
+	charCount++
+	if info, ok := hash[contextMer]; ok {
+		letterIdx := int(acgt(next))
+		if info.next[letterIdx] < seenThreshold {
+			smoothed++
+			//fmt.Fprintf(smoothFile, "%d ", charCount - lastSmooth[letterIdx]-1)
+			writeVarLenInt(smoothFile, charCount-lastSmooth[letterIdx]-1)
+			lastSmooth[letterIdx] = charCount
+			return maxChar(info.next)
+		}
+	}
+	return next
+}
+
+// countMatchingContexts() counts the number of kmers present in the hash.
+func countMatchingContexts(hash KmerHash, r string) (n int) {
+	/*
+		context := r[:globalK]
+		for i := globalK; i <= len(r)-globalK; i++ {
+			if _, ok := hash[stringToKmer(context)]; ok {
+				n++
+			}
+			context = context[1:] + string(r[i])
+		}
+		return */
+
+	contextMer := stringToKmer(r[:globalK])
+	for i := 0; i <= len(r)-globalK; i++ {
+		if _, ok := hash[contextMer]; ok {
+			n++
+		}
+		if i+globalK < len(r) {
+			contextMer = shiftKmer(contextMer, r[i+globalK])
+		}
+		/*
+			if _, ok := hash[stringToKmer(r[i:i+globalK])]; ok {
+				n++
+			} */
+	}
+	return
+}
+
+// readAndFlipReads() reads the reads and reverse complements them if the
+// reverse complement matches the hash better (according to a countMatching*
+// function above). It returns a slide of the reads. "N"s are treated as "A"s.
+// No other characters are transformed and will eventually lead to a panic.
+func readAndFlipReadsOld(readFile string, hash KmerHash, flipReadsOption bool) []string {
+	// open the read file
+	log.Println("Reading and flipping reads...")
+	in, err := os.Open(readFile)
+	DIE_ON_ERR(err, "Couldn't open read file %s", readFile)
+	defer in.Close()
+
+	// put the reads into a global array, flipped if needed
+	reads := make([]string, 0, 1000000)
+	scanner := bufio.NewScanner(in)
+	for scanner.Scan() {
+		// remove spaces and convert on-ACGT to 'A'
+		r := strings.Replace(strings.TrimSpace(strings.ToUpper(scanner.Text())), "N", "A", -1)
+		if flipReadsOption {
+			n1 := countMatchingObservations(hash, r)
+			rcr := reverseComplement(r)
+			n2 := countMatchingObservations(hash, rcr)
+			// if they are tied, take the lexigographically smaller one
+			if n2 > n1 || (n2 == n1 && rcr < r) {
+				r = rcr
+				flipped++
+			}
+		}
+		reads = append(reads, r)
+	}
+	DIE_ON_ERR(scanner.Err(), "Couldn't read reads file to completion")
+
+	// sort the strings and return
+	sort.Strings(reads)
+	log.Printf("Read %v reads; flipped %v of them.\n", len(reads), flipped)
+	return reads
+}
+
+/*
+type Bucket struct {
+    reads []int
+}
+
+func listBuckets(reads []*FastQ) map[Kmer]Bucket {
+    buckets := make(map[Kmer][]int, 1000000)
+
+    // for every read
+    for nr, fq := range reads {
+        // figure out it's head and add the index of this read to that bucket
+        b := stringToKmer(string(rec.Seq[:globalK]))
+        buckets[b].reads = append(buckets[b].reads, nr)
+    }
+    
+}
+*/
+
+/*
+	for curBucket < len(kmers) {
+		// write the bucket
+		buf.Write([]byte(kmers[curBucket]))
+
+		contextMer = stringToKmer(kmers[curBucket])
+
+		// write the reads
+		for i := 0; i < readLen-len(kmers[0]); i++ {
+			// decode next symbol
+			symb, err := decoder.Decode(contextTotal(hash, contextMer), lu)
+			DIE_ON_ERR(err, "Fatal error decoding!")
+			b := byte(symb)
+
+			// write it out
+			buf.WriteByte(baseFromBits(b))
+
+			// update hash counts (throws away the computed interval; just
+			// called for side effects.)
+			nextInterval(hash, contextMer, b)
+
+			// update the new context
+			contextMer = shiftKmer(contextMer, b)
+		}
+
+		// at the end of the read; write a newline and increment the # of reads
+		// from this bucket that we've written
+		buf.WriteByte('\n')
+		bucketCount++
+		n++
+
+		if bucketCount == counts[curBucket] {
+			curBucket++
+			bucketCount = 0
+		}
+	}
+    */
+
+
+/*
+// require seeing an item twice before counting it
+x transcript sequences are assigned 2
+* when we use a character in a context, increment by 1
+x w = observationWeight * min64(uint64(dist[i]-1), 1)
+x Smooth anytime count < 2
+*/
+
+/*
+1. When encoding a read, check a few kmers randomly and
+choose the strand that matches the most (done)
+
+2. If you encounter a kmer you haven't seen in this context,
+    record that you saw it
+    output the maximum probability kmer
+    If you see it a second time, change prob to match reference prob
+
+3. When encoding the first k letters, we use a special prob distribution
+(done)
+
+4. update special prob distribution (done)
+
+10  smoothed    13479801
+12  smoothed    12106330
+14  smoothed    6952281
+
+head file:
+14  smoothed  6702274
+14  smoothed no pseudo   6688925
+14  smoothed no pseudo, update-in-xcript, 4741447
+14  no-smooth, pseudo=0, update-in-xscript, 5814616
+    if context exists & interval is non-zero, we use it and increment the use
+        we increment by 1, and devide the total counts by 2 so that we have to see a new
+        transition twice before it gets a non-zero prob
+    if context doesn't exist, or the interval is zero, we use default and increment it
+14  no-smooth, pseudo=0, update by 1 until seen twice, then by 2 (transcriptomic transitiosn start at 2)
+    size = 5783643
+
+20  same as above, size = 6135591
+18  same as above, size = 5667019
+17  same as above, size = 5453441
+16  same as above, size = 5295103
+15  same as above, size = 5453441
+14  same as above, size = 5783643
+
+next idea: introduce new contexts when we need to:
+    if context is not in hash table
+    use default encoding
+    then add context with 0-weight distribution and increment the item for the next guy
+
+16  no-smoot, pseudo=0, update by 1 until seen twice, then by 2 (transcroptomic transistiosn start at 2)
+        new contexts are added as above
+    size = 5123801
+
+16  all same as previous, but now with smoothing, size = 4511492
+
+16  all same as previous, but with smoothing, size = 4511492 and bziped2 ascii smoothed file = 1972894
+    total size = 6484386
+
+16  same as previous, with smoothing, bzipped binary smoothed file; size = 6458275 = 4511492 + 1946783
+
+16  same as prev, no smoothing, except increment default counters whenever used; size = 5124373
+
+16  same as prev, no smooth, increment counters, use default weights direct with defaultWeight size = 5124373
+
+16  same as prev, no smoot, added "start of read interval"; size = 5124413
+
+next step:
+    to really test benefit of smoothing, you have to record, in a separate file:
+        delta since last smooth
+        2 bit encoding of new character
+        (or just delta since last A smooth, T smooth, C smooth, G smooth)
+*/
